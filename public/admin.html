@@ -1,38 +1,99 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LEGEND — Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css"></head>
 <body>
-<nav class="top"><div class="wrap nav-in"><a class="logo" href="/"><i></i>LEGEND · ADMIN</a>
-<div class="nright"><a class="btn ghost sm" href="/">Site</a><button class="btn ghost sm" id="lo">Quitter</button></div></div></nav>
-<main class="wrap" style="padding:40px 24px 80px;max-width:900px">
-  <div class="eb">Modération</div><h1 class="t" style="margin-bottom:20px">Panel admin</h1>
-  <div class="bar"><select id="flt" style="width:220px"><option value="pending">En attente</option><option value="approved">Publiées</option><option value="rejected">Refusées</option><option value="all">Toutes</option></select></div>
-  <div id="list"></div>
-  <h2 style="margin:40px 0 14px;font-size:1.2rem">Signalements</h2><div id="rp"></div>
+<nav class="top"><div class="navp"><a class="logo" href="/"><i></i>LEGEND · ADMIN</a>
+<div class="nright" style="margin-left:auto"><a class="btn ghost sm" href="/">Site</a><button class="btn ghost sm" id="lo">Quitter</button></div></div></nav>
+<main class="wrap" style="padding:40px 24px 90px;max-width:940px">
+  <div class="eb">Administration</div><h1 class="t" style="margin-bottom:22px">Panel admin</h1>
+  <div class="tabs" id="tabs"><button class="tab on" data-t="mod">Modération</button><button class="tab" data-t="cats">Catégories</button><button class="tab" data-t="vip">VIP</button><button class="tab" data-t="rep">Signalements</button></div>
+  <div id="box"></div>
 </main>
 <script>
-const $=s=>document.querySelector(s);
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const post=(u,b)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-let ALL=[];
-async function load(){
-  ALL=await fetch('/api/admin/resources').then(r=>r.json());
-  const f=$('#flt').value,l=ALL.filter(r=>f==='all'||r.status===f);
-  $('#list').innerHTML=l.map(r=>`<div class="row"><div><a href="/#/r/${esc(r.id)}" target="_blank"><b>${esc(r.title)}</b></a>
-   <div class="mut" style="font-size:.8rem">${esc(r.authorName)} · ${esc(r.category)} · ${Math.ceil(r.fileSize/1024)} Ko · <span class="tag ${esc(r.status)}">${esc(r.status)}</span></div></div>
-   <div class="acts">${r.status!=='approved'?`<button class="btn sm" data-a="approved" data-id="${esc(r.id)}">Valider</button>`:''}${r.status!=='rejected'?`<button class="btn ghost sm" data-a="rejected" data-id="${esc(r.id)}">Refuser</button>`:''}<button class="btn danger sm" data-a="del" data-id="${esc(r.id)}">Supprimer</button></div></div>`).join('')||'<p class="empty" style="padding:30px">Rien ici.</p>';
-  document.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{
-    if(b.dataset.a==='del'){if(!confirm('Supprimer définitivement ?'))return;await fetch('/api/admin/resources/'+b.dataset.id,{method:'DELETE'})}
-    else await post(`/api/admin/resources/${b.dataset.id}/status`,{status:b.dataset.a});
-    load()});
-  const rp=await fetch('/api/admin/reports').then(r=>r.json());
-  $('#rp').innerHTML=rp.map(x=>{const r=ALL.find(y=>y.id===x.resourceId);return `<div class="row"><div><b>${esc(r?r.title:'(supprimée)')}</b><div class="mut" style="font-size:.82rem">${esc(x.by)} : ${esc(x.reason)}</div></div><button class="btn ghost sm" data-r="${esc(x.id)}">Classer</button></div>`}).join('')||'<p class="mut">Aucun signalement.</p>';
-  document.querySelectorAll('[data-r]').forEach(b=>b.onclick=async()=>{await fetch('/api/admin/reports/'+b.dataset.r,{method:'DELETE'});load()});
-}
-$('#flt').onchange=load;
-$('#lo').onclick=async()=>{await fetch('/auth/logout',{method:'POST'});location.href='/'};
-load();
-</script></body></html>
+const api=(u,m='GET',b)=>fetch(u,{method:m,headers:b!==undefined?{'Content-Type':'application/json'}:{},body:b!==undefined?JSON.stringify(b):undefined}).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Erreur');return d});
+const fail=e=>alert(e.message);
+const fdate=t=>new Date(t).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'});
+const left=t=>{if(t===null)return 'à vie';const d=t-Date.now();if(d<=0)return 'expiré';const days=Math.floor(d/864e5);return days>=1?`${days} j restants`:`${Math.max(1,Math.floor(d/36e5))} h restantes`};
+let tab='mod',flt='pending';
 
+/* ---- Modération ---- */
+async function mod(){
+  const all=await api('/api/admin/resources'),l=all.filter(r=>flt==='all'||r.status===flt);
+  $('#box').innerHTML=`<div class="bar"><select id="flt" style="width:220px">${[['pending','En attente'],['approved','Publiées'],['rejected','Refusées'],['all','Toutes']].map(o=>`<option value="${o[0]}" ${o[0]===flt?'selected':''}>${o[1]}</option>`).join('')}</select></div>`+
+  (l.map(r=>`<div class="row"><div><a href="/#/r/${esc(r.id)}" target="_blank"><b>${esc(r.title)}</b></a><div class="dim" style="font-size:.8rem">${esc(r.authorName)} · ${esc(r.categoryName)}${r.vipOnly?' ★':''} · ${Math.ceil(r.fileSize/1024)} Ko · <span class="tag ${esc(r.status)}">${esc(r.status)}</span></div></div>
+   <div class="acts">${r.status!=='approved'?`<button class="btn sm" data-a="approved" data-id="${esc(r.id)}">Valider</button>`:''}${r.status!=='rejected'?`<button class="btn ghost sm" data-a="rejected" data-id="${esc(r.id)}">Refuser</button>`:''}<button class="btn danger sm" data-a="del" data-id="${esc(r.id)}">Supprimer</button></div></div>`).join('')||'<p class="empty" style="padding:30px;border:1px dashed var(--line2);border-radius:14px;text-align:center">Rien ici.</p>');
+  $('#flt').onchange=e=>{flt=e.target.value;mod()};
+  $$('[data-a]').forEach(b=>b.onclick=async()=>{try{
+    if(b.dataset.a==='del'){if(!confirm('Supprimer définitivement ?'))return;await api('/api/admin/resources/'+b.dataset.id,'DELETE')}
+    else await api(`/api/admin/resources/${b.dataset.id}/status`,'POST',{status:b.dataset.a});mod()}catch(e){fail(e)}});
+}
+
+/* ---- Catégories ---- */
+async function cats(){
+  const {groups}=await api('/api/catalog');
+  $('#box').innerHTML=groups.map((g,gi)=>`<div class="gbox"><div class="ghead"><input type="text" value="${esc(g.name)}" data-gname="${esc(g.id)}" maxlength="40">
+    <button class="btn ghost sm" data-gm="${esc(g.id)}" data-d="-1" ${gi===0?'disabled':''}>↑</button><button class="btn ghost sm" data-gm="${esc(g.id)}" data-d="1" ${gi===groups.length-1?'disabled':''}>↓</button>
+    <button class="btn danger sm" data-gdel="${esc(g.id)}">Supprimer</button><span class="dim" style="font-size:.78rem">sur-catégorie</span></div>
+    ${g.categories.map((c,ci)=>`<div class="crow"><input type="text" value="${esc(c.name)}" data-cname="${esc(c.id)}" maxlength="40">
+     <label><input type="checkbox" data-cvip="${esc(c.id)}" ${c.vipOnly?'checked':''}> ★ VIP</label><span class="dim" style="font-size:.78rem;min-width:70px">${c.count} ressource${c.count>1?'s':''}</span>
+     <select data-cgrp="${esc(c.id)}" style="width:150px">${groups.map(o=>`<option value="${esc(o.id)}" ${o.id===g.id?'selected':''}>${esc(o.name)}</option>`).join('')}</select>
+     <button class="btn ghost sm" data-cm="${esc(c.id)}" data-d="-1" ${ci===0?'disabled':''}>↑</button><button class="btn ghost sm" data-cm="${esc(c.id)}" data-d="1" ${ci===g.categories.length-1?'disabled':''}>↓</button>
+     <button class="btn danger sm" data-cdel="${esc(c.id)}">✕</button></div>`).join('')}
+    <div class="crow"><input type="text" placeholder="Nouvelle catégorie…" data-newcat="${esc(g.id)}" maxlength="40"><label><input type="checkbox" data-newvip="${esc(g.id)}"> ★ VIP</label><button class="btn sm" data-addcat="${esc(g.id)}">Ajouter</button></div></div>`).join('')+
+   `<div class="gbox"><div class="ghead" style="margin:0"><input type="text" id="ng" placeholder="Nouvelle sur-catégorie (ex : Serveurs, Exclusif)…" maxlength="40"><button class="btn sm" id="addg">Créer</button></div></div>`;
+  const run=fn=>async e=>{try{await fn(e);cats()}catch(x){fail(x)}};
+  $$('[data-gname]').forEach(i=>i.onchange=run(()=>api('/api/admin/groups/'+i.dataset.gname,'PUT',{name:i.value})));
+  $$('[data-gm]').forEach(b=>b.onclick=run(()=>api(`/api/admin/groups/${b.dataset.gm}/move`,'POST',{dir:+b.dataset.d})));
+  $$('[data-gdel]').forEach(b=>b.onclick=run(()=>{if(confirm('Supprimer cette sur-catégorie ?'))return api('/api/admin/groups/'+b.dataset.gdel,'DELETE')}));
+  $$('[data-cname]').forEach(i=>i.onchange=run(()=>api('/api/admin/categories/'+i.dataset.cname,'PUT',{name:i.value})));
+  $$('[data-cvip]').forEach(i=>i.onchange=run(()=>api('/api/admin/categories/'+i.dataset.cvip,'PUT',{vipOnly:i.checked})));
+  $$('[data-cgrp]').forEach(i=>i.onchange=run(()=>api('/api/admin/categories/'+i.dataset.cgrp,'PUT',{groupId:i.value})));
+  $$('[data-cm]').forEach(b=>b.onclick=run(()=>api(`/api/admin/categories/${b.dataset.cm}/move`,'POST',{dir:+b.dataset.d})));
+  $$('[data-cdel]').forEach(b=>b.onclick=run(()=>{if(confirm('Supprimer cette catégorie ?'))return api('/api/admin/categories/'+b.dataset.cdel,'DELETE')}));
+  $$('[data-addcat]').forEach(b=>b.onclick=run(()=>{const g=b.dataset.addcat,n=$(`[data-newcat="${g}"]`).value;if(!n.trim())return;return api('/api/admin/categories','POST',{name:n,groupId:g,vipOnly:$(`[data-newvip="${g}"]`).checked})}));
+  $('#addg').onclick=run(()=>{const n=$('#ng').value;if(n.trim())return api('/api/admin/groups','POST',{name:n})});
+}
+
+/* ---- VIP ---- */
+async function vip(){
+  const list=await api('/api/admin/vip');
+  $('#box').innerHTML=`<div class="gbox"><h3 style="margin-bottom:14px">Donner le VIP</h3>
+   <div class="fld"><label>Membre (cherche un pseudo déjà connecté au site, ou colle un ID Discord)</label><input id="uq" placeholder="Pseudo ou ID Discord…" autocomplete="off"><div class="sug" id="sug"></div></div>
+   <div class="grid2"><div class="fld"><label>ID Discord choisi</label><input id="uid" placeholder="123456789012345678"></div>
+   <div class="fld"><label>Durée</label><select id="dur"><option value="7">7 jours</option><option value="30" selected>30 jours</option><option value="90">90 jours</option><option value="180">6 mois</option><option value="365">1 an</option><option value="life">À vie</option><option value="custom">Personnalisée…</option></select></div></div>
+   <div class="fld" id="cw" hidden><label>Nombre de jours</label><input id="cd" type="number" min="1" max="3650" value="14"></div>
+   <button class="btn vip" id="give">★ Donner le VIP</button><small class="dim" style="display:block;margin-top:10px">Si la personne est déjà VIP, la durée est ajoutée à celle qui reste. Le VIP s'arrête tout seul à la fin.</small></div>
+   <h3 style="margin:26px 0 12px">Membres VIP (${list.length})</h3>`+
+   (list.map(v=>`<div class="row"><div style="display:flex;gap:10px;align-items:center">${v.avatar?`<img class="avatar" src="${esc(v.avatar)}" alt="">`:''}<div><b>${esc(v.name||'Inconnu')}</b> <span class="dim mono" style="font-size:.76rem">${esc(v.userId)}</span>
+    <div class="dim" style="font-size:.8rem"><span class="tag vip">${v.until===null?'à vie':v.active?'VIP':'expiré'}</span> ${v.until===null?'':`jusqu'au ${fdate(v.until)} · ${left(v.until)}`} · donné par ${esc(v.grantedBy||'?')}</div></div></div>
+    <div class="acts"><button class="btn ghost sm" data-ext="${esc(v.userId)}">+30 j</button><button class="btn danger sm" data-rm="${esc(v.userId)}">Retirer</button></div></div>`).join('')||'<p class="dim">Personne pour le moment.</p>');
+  let t;
+  $('#uq').oninput=e=>{clearTimeout(t);t=setTimeout(async()=>{const q=e.target.value.trim();if(!q){$('#sug').innerHTML='';return}
+    const us=await api('/api/admin/users?q='+encodeURIComponent(q)).catch(()=>[]);
+    $('#sug').innerHTML=us.map(u=>`<button data-pick="${esc(u.id)}">${u.avatar?`<img class="avatar" style="width:24px;height:24px" src="${esc(u.avatar)}" alt="">`:''}<span>${esc(u.name)}</span><span class="dim mono" style="font-size:.74rem;margin-left:auto">${esc(u.id)}</span></button>`).join('');
+    $$('[data-pick]').forEach(b=>b.onclick=()=>{$('#uid').value=b.dataset.pick;$('#sug').innerHTML='';$('#uq').value=''})},200)};
+  $('#dur').onchange=e=>$('#cw').hidden=e.target.value!=='custom';
+  $('#give').onclick=async()=>{try{
+    const d=$('#dur').value,days=d==='life'?null:d==='custom'?parseInt($('#cd').value,10):parseInt(d,10);
+    await api('/api/admin/vip','POST',{userId:$('#uid').value.trim()||$('#uq').value.trim(),days});vip()}catch(e){fail(e)}};
+  $$('[data-ext]').forEach(b=>b.onclick=async()=>{try{await api('/api/admin/vip','POST',{userId:b.dataset.ext,days:30});vip()}catch(e){fail(e)}});
+  $$('[data-rm]').forEach(b=>b.onclick=async()=>{if(!confirm('Retirer le VIP ?'))return;try{await api('/api/admin/vip/'+b.dataset.rm,'DELETE');vip()}catch(e){fail(e)}});
+}
+
+/* ---- Signalements ---- */
+async function rep(){
+  const [rp,all]=await Promise.all([api('/api/admin/reports'),api('/api/admin/resources')]);
+  $('#box').innerHTML=rp.map(x=>{const r=all.find(y=>y.id===x.resourceId);return `<div class="row"><div><b>${esc(r?r.title:'(supprimée)')}</b><div class="dim" style="font-size:.82rem">${esc(x.by)} : ${esc(x.reason)}</div></div><button class="btn ghost sm" data-r="${esc(x.id)}">Classer</button></div>`}).join('')||'<p class="dim">Aucun signalement.</p>';
+  $$('[data-r]').forEach(b=>b.onclick=async()=>{await api('/api/admin/reports/'+b.dataset.r,'DELETE');rep()});
+}
+
+const views={mod,cats,vip,rep};
+$$('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;$$('.tab').forEach(x=>x.classList.toggle('on',x===b));views[tab]().catch(fail)});
+$('#lo').onclick=async()=>{await fetch('/auth/logout',{method:'POST'});location.href='/'};
+mod().catch(fail);
+</script></body></html>

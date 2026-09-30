@@ -1,30 +1,34 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LEGEND — Ressources FiveM</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css"></head>
 <body>
-<nav class="top"><div class="wrap nav-in">
+<nav class="top"><div class="navp">
   <a class="logo" href="#/"><i></i>LEGEND</a>
   <div class="links" id="links">
     <a href="#/" data-r="home">Accueil</a>
-    <div class="dd"><a href="#/ressources" data-r="ressources">Ressources <i class="car">▾</i></a>
-      <div class="menu"><a href="#/ressources/Toutes/top">★ Populaire</a><a href="#/ressources/Toutes/new">＋ Nouveautés</a><div class="ml">Catégories</div><span id="mcats"></span></div></div>
+    <div class="dd"><a href="#/ressources" data-r="ressources">Ressources <i class="car">▾</i></a><div class="menu" id="mres"></div></div>
     <a href="#/classement" data-r="classement">Classement</a>
     <div class="dd"><a href="#/tools/loading-screen" data-r="tools">Tools <i class="car">▾</i></a>
-      <div class="menu"><a href="#/tools/loading-screen">Écran de chargement<small>Crée et exporte ton loading screen</small></a></div></div>
+      <div class="menu"><a href="#/tools/loading-screen"><span>Écran de chargement<small>Crée et exporte ton loading screen</small></span></a></div></div>
+    <a href="#/vip" data-r="vip" style="color:var(--vip)">★ VIP</a>
     <div class="dd"><a href="#/regles" data-r="regles">À propos <i class="car">▾</i></a>
       <div class="menu"><a href="#/regles">Règles &amp; signalement</a><a class="dcl" target="_blank" rel="noopener">Discord</a></div></div>
   </div>
   <div class="nright">
-    <input class="search" id="gs" placeholder="Rechercher…">
-    <a class="btn plus" href="#/publier" title="Publier une ressource">+</a>
+    <button class="btn ghost sm" id="sbtn">Rechercher <span class="kbd">Ctrl K</span></button>
+    <a class="btn sm plus" href="#/publier" title="Publier une ressource">+</a>
     <span id="auth" style="display:flex;gap:8px;align-items:center"></span>
     <button class="burger" id="bg" aria-label="Menu">☰</button>
   </div>
 </div></nav>
 <main id="app"></main>
-<footer><div class="wrap"><span>LEGEND © 2026 — Partage de ressources FiveM par la communauté</span><span><a class="dcl" target="_blank" rel="noopener">Discord</a> · <a href="#/regles">Règles &amp; signalement</a></span></div></footer>
+<footer><div class="wrap"><span>LEGEND © 2026 — Ressources FiveM partagées par la communauté</span><span><a class="dcl" target="_blank" rel="noopener">Discord</a> · <a href="#/regles">Règles</a> · <a href="#/vip">VIP</a></span></div></footer>
+
+<div class="pal" id="pal"><div class="palb"><input id="pq" placeholder="Rechercher une ressource…" autocomplete="off"><div class="pall" id="pl"></div></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="/loading-screen.js"></script>
@@ -34,150 +38,137 @@ const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelecto
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const size=b=>b>1048576?(b/1048576).toFixed(1)+' Mo':Math.ceil(b/1024)+' Ko';
 const ago=t=>{const d=(Date.now()-t)/864e5;return d<1?"aujourd'hui":d<2?'hier':Math.floor(d)+' j'};
+const fdate=t=>new Date(t).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'});
 const j=(u,o)=>fetch(u,o).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Erreur');return d});
-let RES=[],CATS=[],ME={user:null,admin:false};
+let RES=[],CAT={groups:[]},ME={user:null,admin:false,vip:{active:false,until:null}};
+const allCats=()=>CAT.groups.flatMap(g=>g.categories);
+const canVip=()=>ME.admin||ME.vip.active;
 
 async function boot(){
-  ME=await j('/api/me').catch(()=>ME); CATS=await j('/api/categories').catch(()=>[]);
-  $('#auth').innerHTML=ME.user?`${ME.admin?'<a class="btn ghost sm" href="/admin">Admin</a>':''}${ME.user.avatar?`<img class="avatar" src="${esc(ME.user.avatar)}" alt="">`:''}<button class="btn ghost sm" id="lo">Quitter</button>`:`<a class="btn sm" href="/auth/login">Connexion</a>`;
+  ME=await j('/api/me').catch(()=>ME); CAT=await j('/api/catalog').catch(()=>CAT);
+  $('#auth').innerHTML=ME.user
+   ?`${ME.admin?'<a class="btn ghost sm" href="/admin">Admin</a>':''}${ME.vip.active?'<span class="vbadge">VIP</span>':''}${ME.user.avatar?`<img class="avatar" src="${esc(ME.user.avatar)}" alt="">`:''}<button class="btn ghost sm" id="lo">Quitter</button>`
+   :`<a class="btn sm" href="/auth/login">Connexion</a>`;
   const lo=$('#lo');if(lo)lo.onclick=async()=>{await fetch('/auth/logout',{method:'POST'});location.reload()};
-  $('#mcats').innerHTML=CATS.map(c=>`<a href="#/ressources/${encodeURIComponent(c)}">${esc(c)}</a>`).join('');
+  $('#mres').innerHTML=`<a href="#/ressources/all/top">★ Populaires</a><a href="#/ressources/all/new">＋ Nouveautés</a>`+CAT.groups.map(g=>`<div class="ml">${esc(g.name)}</div>${g.categories.map(c=>`<a class="${c.vipOnly?'v':''}" href="#/ressources/${encodeURIComponent(c.id)}"><span>${c.vipOnly?'★ ':''}${esc(c.name)}</span></a>`).join('')}`).join('');
   $$('.dcl').forEach(a=>a.href=DISCORD_URL);
   route();
 }
 const loadRes=async()=>RES=await j('/api/resources').catch(()=>[]);
 const cover=r=>r.images?.[0]?`style="background-image:url('/img/${esc(r.images[0])}')"`:'';
-const card=(r,i=0)=>`<article class="card" data-id="${r.id}" style="animation-delay:${i*40}ms"><div class="th" ${cover(r)}>${r.images?.[0]?'':esc(r.category[0])}<span class="chip">${esc(r.category)}</span></div>
- <div class="cb"><h3>${esc(r.title)}</h3><div class="by">par ${esc(r.authorName)}</div><div class="cm"><span>↗ ${r.views} vues</span><span>↓ ${r.downloads}</span><span>${ago(r.createdAt)}</span></div></div></article>`;
-const bind=()=>$$('.card,.feature').forEach(c=>{
+const card=(r,i=0)=>`<article class="card" data-id="${r.id}" style="animation-delay:${Math.min(i,12)*35}ms"><div class="th" ${cover(r)}>${r.images?.[0]?'':esc((r.categoryName||'?')[0])}<span class="chip">${esc(r.categoryName)}</span>${r.vipOnly?'<span class="lock">★ VIP</span>':''}</div>
+ <div class="cb"><h3>${esc(r.title)}</h3><div class="by">par ${esc(r.authorName)}</div><div class="cm"><span>↗ ${r.views}</span><span>↓ ${r.downloads}</span><span>${ago(r.createdAt)}</span></div></div></article>`;
+const bind=(root=document)=>$$('.card',root).forEach(c=>{
   c.onclick=()=>location.hash='#/r/'+c.dataset.id;
-  if(c.classList.contains('card')){
-    c.onmousemove=e=>{const b=c.getBoundingClientRect(),x=(e.clientX-b.left)/b.width-.5,y=(e.clientY-b.top)/b.height-.5;c.style.transform=`rotateY(${x*14}deg) rotateX(${-y*14}deg) translateZ(14px)`};
-    c.onmouseleave=()=>c.style.transform='';
-  }});
-let raf=0;
-function scene3d(){
-  cancelAnimationFrame(raf);const cv=$('#scene');if(!cv||!window.THREE)return;
-  const W=()=>cv.clientWidth,H=()=>cv.clientHeight;
-  const ren=new THREE.WebGLRenderer({canvas:cv,antialias:true});ren.setPixelRatio(Math.min(devicePixelRatio,2));ren.setSize(W(),H(),false);ren.setClearColor(0x050505);
-  const sc=new THREE.Scene();sc.fog=new THREE.Fog(0x050505,30,190);
-  const cam=new THREE.PerspectiveCamera(60,W()/H(),.1,400);cam.position.set(0,9,0);
-  const g=new THREE.GridHelper(600,150,0x2a2a2a,0x141414);sc.add(g);
-  const solid=new THREE.MeshBasicMaterial({color:0x0c0c0c}),edge=new THREE.LineBasicMaterial({color:0x2c2c2c}),hot=new THREE.LineBasicMaterial({color:0xff4a00}),win=new THREE.MeshBasicMaterial({color:0xff4a00});
-  const LEN=300,blocks=[];
-  const build=(x,z)=>{const w=4+Math.random()*7,d=4+Math.random()*7,h=6+Math.pow(Math.random(),2.2)*60,geo=new THREE.BoxGeometry(w,h,d),grp=new THREE.Group();
-    grp.add(new THREE.Mesh(geo,solid));grp.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),Math.random()<.14?hot:edge));
-    for(let i=0;i<Math.floor(Math.random()*4);i++){const m=new THREE.Mesh(new THREE.PlaneGeometry(1.2,.5),win);m.position.set((Math.random()-.5)*w*.7,(Math.random()-.5)*h*.8,d/2+.02);grp.add(m)}
-    grp.position.set(x,h/2,z);sc.add(grp);blocks.push(grp)};
-  for(let z=0;z<LEN;z+=10)for(const s of[-1,1])for(let k=0;k<3;k++)build(s*(16+k*14+Math.random()*4),-z);
-  let mx=0;const mm=e=>{mx=e.clientX/innerWidth-.5};addEventListener('mousemove',mm);
-  const rs=()=>{ren.setSize(W(),H(),false);cam.aspect=W()/H();cam.updateProjectionMatrix()};addEventListener('resize',rs);
-  let z=0;
-  const loop=()=>{if(!document.body.contains(cv)){removeEventListener('mousemove',mm);removeEventListener('resize',rs);ren.dispose();return}
-    z-=.11;cam.position.z=z;cam.position.x+=((mx*14)-cam.position.x)*.03;cam.rotation.y=-mx*.25;cam.rotation.x=-.06;
-    g.position.z=Math.round(z/4)*4;for(const b of blocks)if(b.position.z>z+40)b.position.z-=LEN+10;
-    ren.render(sc,cam);raf=requestAnimationFrame(loop)};loop();
-}
-const counts=()=>Object.fromEntries(CATS.map(c=>[c,RES.filter(r=>r.category===c).length]));
+  c.onmousemove=e=>{const b=c.getBoundingClientRect(),x=(e.clientX-b.left)/b.width-.5,y=(e.clientY-b.top)/b.height-.5;c.style.transform=`rotateY(${x*14}deg) rotateX(${-y*14}deg) translateZ(14px)`};
+  c.onmouseleave=()=>c.style.transform='';
+});
+const none='<p class="empty">Aucune ressource pour le moment.</p>';
 
+/* ---------- accueil ---------- */
 async function home(){
-  await loadRes(); const n=counts();
+  await loadRes();
   const pop=[...RES].sort((a,b)=>b.downloads-a.downloads).slice(0,8), fresh=RES.slice(0,8);
   const dl=RES.reduce((s,r)=>s+r.downloads,0), au=new Set(RES.map(r=>r.authorName)).size;
-  const none='<p class="empty">Aucune ressource pour le moment. Sois le premier à en publier une !</p>';
   $('#app').innerHTML=`<div class="wrap">
-   <section class="h2col"><div><div class="eb">LEGEND · FiveM</div><h1 class="big2">Partage.<br>Télécharge.<br><span class="acc">Crée.</span></h1>
-    <p class="mut lead">La bibliothèque de ressources FiveM de la communauté. Chaque publication est vérifiée avant d'apparaître ici.</p>
-    <div class="cta"><a class="btn" href="#/publier">Publier une ressource</a><a class="btn ghost" href="#/ressources">Explorer</a></div>
-    <div class="mini"><span><b>${RES.length}</b>ressources</span><span><b>${dl}</b>téléchargements</span><span><b>${au}</b>créateurs</span></div></div>
-    <div class="feed"><div class="feedh"><span class="live"></span>Dernières publications</div>
-     ${fresh.slice(0,5).map(r=>`<a class="frow" href="#/r/${r.id}"><div class="fth" ${cover(r)}></div><div><b>${esc(r.title)}</b><small>${esc(r.category)} · ${esc(r.authorName)}</small></div><span class="mut">${ago(r.createdAt)}</span></a>`).join('')||'<p class="mut" style="padding:22px">Rien pour le moment.</p>'}</div></section>
-   <section class="tiles">${CATS.map(c=>`<a class="tile" href="#/ressources/${encodeURIComponent(c)}"><span class="tl">${esc(c[0])}</span><b>${esc(c)}</b><small>${n[c]} ressource${n[c]>1?'s':''}</small></a>`).join('')}</section>
-   <div class="sec2"><h2>Populaires</h2><a class="mut" href="#/ressources/Toutes/top">Tout voir →</a></div>
-   <div class="hscroll">${pop.map(card).join('')||none}</div>
-   <div class="sec2"><h2>Nouveautés</h2><a class="mut" href="#/ressources/Toutes/new">Tout voir →</a></div>
-   <div class="grid">${fresh.map(card).join('')||none}</div>
-   <a class="promo" href="#/tools/loading-screen"><div><div class="eb">Tool</div><h3>Crée ton écran de chargement</h3><p>Personnalise, prévisualise et exporte une ressource FiveM prête à poser.</p></div><span class="btn">Essayer</span></a></div>`;
-  bind();
-}
-async function list(cat='Toutes',mode='new'){
-  await loadRes(); const st={cat,q:'',sort:mode};
-  $('#app').innerHTML=`<div class="wrap"><div style="margin:40px 0 24px"><div class="eb">Catalogue</div><h1 class="t">${mode==='top'?'Populaires':'Ressources'}</h1></div>
-   <div class="layout" style="margin-top:0"><aside class="side"><div class="eb">Catégories</div><div id="cl"></div></aside><div>
-   <div class="bar"><input id="q" placeholder="Rechercher une ressource…"><select id="so"><option value="new">Récentes</option><option value="top">Plus téléchargées</option><option value="views">Plus vues</option></select></div><div class="grid" id="g"></div></div></div></div>`;
-  $('#so').value=mode==='top'?'top':'new';
-  const draw=()=>{const n=counts();
-   $('#cl').innerHTML=['Toutes',...CATS].map(c=>`<div class="catlink ${c===st.cat?'on':''}" data-c="${c}"><span>${c}</span><b>${c==='Toutes'?RES.length:n[c]}</b></div>`).join('');
-   $$('#cl .catlink').forEach(e=>e.onclick=()=>{st.cat=e.dataset.c;draw()});
-   let l=RES.filter(r=>(st.cat==='Toutes'||r.category===st.cat)&&(r.title+r.description+r.authorName).toLowerCase().includes(st.q));
-   l.sort({new:(a,b)=>b.createdAt-a.createdAt,top:(a,b)=>b.downloads-a.downloads,views:(a,b)=>b.views-a.views}[st.sort]);
-   $('#g').innerHTML=l.map(card).join('')||'<p class="empty">Aucun résultat.</p>';bind()};
-  $('#q').oninput=e=>{st.q=e.target.value.toLowerCase();draw()};$('#so').onchange=e=>{st.sort=e.target.value;draw()};
-  window.__q=q=>{$('#q').value=q;st.q=q.toLowerCase();draw()};draw();
+   <section class="hero"><span class="pill"><b>★</b> Accès VIP · contenus exclusifs</span>
+    <h1 class="big">Les ressources FiveM, <em>en mieux.</em></h1>
+    <p class="lead">Scripts, mappings, véhicules et bases partagés par la communauté, vérifiés avant publication.</p>
+    <div class="searchbox" id="hs"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>Rechercher une ressource…</span><span class="kbd">Ctrl K</span></div>
+    <div class="cta"><a class="btn" href="#/publier">Publier une ressource</a><a class="btn ghost" href="#/ressources">Tout explorer</a></div></section>
+   <div class="stats3"><div class="stat"><b>${RES.length}</b><span>ressources</span></div><div class="stat"><b>${dl}</b><span>téléchargements</span></div><div class="stat"><b>${au}</b><span>créateurs</span></div></div>
+   <section class="space">${CAT.groups.map(g=>`<div class="gtitle">${esc(g.name)}</div><div class="tiles">${g.categories.map(c=>`<a class="tile ${c.vipOnly?'v':''}" href="#/ressources/${encodeURIComponent(c.id)}"><b>${c.vipOnly?'★ ':''}${esc(c.name)}</b><small>${c.count} ressource${c.count>1?'s':''}</small></a>`).join('')}</div>`).join('')}</section>
+   <section class="space"><div class="sec"><h2>Populaires</h2><a href="#/ressources/all/top">Tout voir →</a></div><div class="hscroll">${pop.map(card).join('')||none}</div></section>
+   <section class="space"><div class="sec"><h2>Nouveautés</h2><a href="#/ressources/all/new">Tout voir →</a></div><div class="grid">${fresh.map(card).join('')||none}</div></section>
+   <section class="bento"><div class="bx v"><h3>Passe VIP</h3><p>Accède aux ressources exclusives. Durée limitée ou à vie, attribuée par l'équipe.</p><a class="btn vip" href="#/vip">Découvrir le VIP</a></div>
+    <div class="bx"><h3>Écran de chargement</h3><p>Personnalise, prévisualise et exporte une ressource FiveM prête à poser.</p><a class="btn" href="#/tools/loading-screen">Essayer</a></div></section></div>`;
+  $('#hs').onclick=openPal; bind();
 }
 
+/* ---------- catalogue ---------- */
+async function list(catId='all',mode='new'){
+  await loadRes(); const st={cat:catId,q:'',sort:mode==='top'?'top':'new'}, shut=new Set();
+  $('#app').innerHTML=`<div class="wrap"><div style="margin:44px 0 26px"><div class="eb">Catalogue</div><h1 class="t" id="lt">Ressources</h1></div>
+   <div class="layout"><aside class="side" id="sd"></aside><div><div class="bar"><input id="q" placeholder="Filtrer…"><select id="so"><option value="new">Récentes</option><option value="top">Plus téléchargées</option><option value="views">Plus vues</option></select></div><div class="grid" id="g"></div></div></div></div>`;
+  $('#so').value=st.sort;
+  const side=()=>{
+    $('#sd').innerHTML=`<div class="sg"><div class="cl ${st.cat==='all'?'on':''}" data-c="all"><span>Toutes</span><b>${RES.length}</b></div></div>`+CAT.groups.map(g=>`<div class="sg ${shut.has(g.id)?'shut':''}"><button class="sgh" data-g="${esc(g.id)}">${esc(g.name)}<i>▾</i></button><div class="sgb">${g.categories.map(c=>`<div class="cl ${c.vipOnly?'v':''} ${st.cat===c.id?'on':''}" data-c="${esc(c.id)}"><span>${c.vipOnly?'★ ':''}${esc(c.name)}</span><b>${RES.filter(r=>r.category===c.id).length}</b></div>`).join('')}</div></div>`).join('');
+    $$('#sd .cl').forEach(e=>e.onclick=()=>{st.cat=e.dataset.c;history.replaceState(null,'','#/ressources/'+encodeURIComponent(st.cat));draw()});
+    $$('#sd .sgh').forEach(e=>e.onclick=()=>{const g=e.dataset.g;shut.has(g)?shut.delete(g):shut.add(g);side()});
+  };
+  const draw=()=>{
+    side(); const c=allCats().find(x=>x.id===st.cat); $('#lt').textContent=c?c.name:'Ressources';
+    const l=RES.filter(r=>(st.cat==='all'||r.category===st.cat)&&(r.title+r.description+r.authorName).toLowerCase().includes(st.q));
+    l.sort({new:(a,b)=>b.createdAt-a.createdAt,top:(a,b)=>b.downloads-a.downloads,views:(a,b)=>b.views-a.views}[st.sort]);
+    $('#g').innerHTML=l.map(card).join('')||'<p class="empty">Aucun résultat.</p>';bind($('#g'))};
+  $('#q').oninput=e=>{st.q=e.target.value.toLowerCase();draw()};$('#so').onchange=e=>{st.sort=e.target.value;draw()};
+  draw();
+}
+
+/* ---------- fiche ---------- */
 async function detail(id){
   let r;try{r=await j('/api/resources/'+id)}catch{$('#app').innerHTML='<div class="wrap"><p class="empty" style="margin-top:60px">Ressource introuvable.</p></div>';return}
-  const pend=r.status!=='approved';
-  $('#app').innerHTML=`<div class="wrap"><div class="crumb"><a href="#/">Accueil</a> / <a href="#/ressources/${encodeURIComponent(r.category)}">${esc(r.category)}</a> / ${esc(r.title)}</div>
+  const pend=r.status!=='approved', locked=r.vipOnly&&!canVip();
+  const dlBtn=!ME.user?`<a class="btn full" href="/auth/login">Connexion pour télécharger</a>`
+    :locked?`<a class="btn vip full" href="#/vip">★ Réservé aux VIP</a>`:`<a class="btn full" href="/api/resources/${r.id}/download">Télécharger</a>`;
+  $('#app').innerHTML=`<div class="wrap"><div class="crumb"><a href="#/">Accueil</a> / <a href="#/ressources/${encodeURIComponent(r.category)}">${esc(r.categoryName)}</a> / ${esc(r.title)}</div>
   <div class="prod"><div>
    ${pend?`<div class="flash" style="margin-bottom:14px">Statut : ${r.status==='pending'?'en attente de validation':'refusée'} — visible uniquement par toi et les admins.</div>`:''}
+   ${r.vipOnly?'<div class="flash vip" style="margin-bottom:14px">★ Ressource exclusive VIP</div>':''}
    <h1 class="t" style="margin-bottom:18px">${esc(r.title)}</h1>
    <div class="hero-img" id="hi">${r.images[0]?`<img src="/img/${esc(r.images[0])}" alt="">`:''}</div>
    ${r.images.length>1?`<div class="gal">${r.images.map((m,i)=>`<img class="${i?'':'on'}" src="/img/${esc(m)}" alt="">`).join('')}</div>`:''}
    <div class="desc">${esc(r.description)||'<span class="mut">Aucune description.</span>'}</div></div>
-  <aside class="info"><div class="panel"><dl><div><dt>Auteur</dt><dd>${esc(r.authorName)}</dd></div><div><dt>Catégorie</dt><dd>${esc(r.category)}</dd></div>
+  <aside class="info"><div class="panel"><dl><div><dt>Auteur</dt><dd>${esc(r.authorName)}</dd></div><div><dt>Catégorie</dt><dd>${esc(r.categoryName)}</dd></div>
    ${r.version?`<div><dt>Version</dt><dd>${esc(r.version)}</dd></div>`:''}${r.framework?`<div><dt>Framework</dt><dd>${esc(r.framework)}</dd></div>`:''}
    <div><dt>Fichier</dt><dd>${size(r.fileSize)}</dd></div><div><dt>Vues / Téléch.</dt><dd>${r.views} / ${r.downloads}</dd></div><div><dt>Publié</dt><dd>${ago(r.createdAt)}</dd></div></dl>
-   <div style="margin-top:16px;display:grid;gap:8px">${ME.user?`<a class="btn full" href="/api/resources/${r.id}/download">Télécharger</a>`:`<a class="btn full" href="/auth/login">Connexion pour télécharger</a>`}
-   ${ME.user?'<button class="btn ghost full sm" id="rp">Signaler</button>':''}</div><div id="fl"></div></div></aside></div></div>`;
+   <div style="margin-top:16px;display:grid;gap:8px">${dlBtn}${ME.user?'<button class="btn ghost full sm" id="rp">Signaler</button>':''}</div><div id="fl"></div></div></aside></div></div>`;
   $$('.gal img').forEach(g=>g.onclick=()=>{$$('.gal img').forEach(x=>x.classList.remove('on'));g.classList.add('on');$('#hi').innerHTML=`<img src="${g.src}" alt="">`});
   const rp=$('#rp');if(rp)rp.onclick=async()=>{const why=prompt('Pourquoi signaler cette ressource ? (contenu volé, malveillant…)');if(!why)return;
     try{await j(`/api/resources/${r.id}/report`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:why})});$('#fl').innerHTML='<div class="flash ok" style="margin-top:10px">Merci, signalement transmis.</div>'}catch(e){$('#fl').innerHTML=`<div class="flash err" style="margin-top:10px">${esc(e.message)}</div>`}};
+  const hi=$('#hi');hi.onmousemove=e=>{const b=hi.getBoundingClientRect(),x=(e.clientX-b.left)/b.width-.5,y=(e.clientY-b.top)/b.height-.5;hi.style.transform=`perspective(1200px) rotateY(${x*8}deg) rotateX(${-y*8}deg)`};hi.onmouseleave=()=>hi.style.transform='';
 }
 
+/* ---------- publication ---------- */
 function publish(){
   if(!ME.user){$('#app').innerHTML=`<div class="up" style="text-align:center"><h1 class="t">Publier une ressource</h1><p class="mut" style="margin:14px 0 24px">Connecte-toi avec Discord pour partager une ressource.</p><a class="btn" href="/auth/login">Connexion Discord</a></div>`;return}
   const S={step:0,title:'',description:'',category:'',version:'',framework:'',images:[],file:null,rights:false};
-  const names=[['Informations','1'],['Visuels','2'],['Fichiers','3'],['Catégorie','4']];
+  const names=['Informations','Visuels','Fichier','Catégorie'];
+  const err=m=>$('#er').innerHTML=m?`<div class="flash err" style="margin-top:14px">${esc(m)}</div>`:'';
   const view=()=>{
-   $('#app').innerHTML=`<div class="up"><a class="mut" href="#/">← Retour à l'accueil</a>
-    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-end;margin-top:16px;flex-wrap:wrap"><div><h1 class="t">Ajouter une ressource</h1><p class="mut">Quatre étapes : les infos, les visuels, le fichier, puis la catégorie.</p></div><div class="flash">${ME.admin?'Publication directe (admin)':'Ta ressource sera examinée avant publication'}</div></div>
-    <div class="upgrid"><div class="steps">${names.map((n,i)=>`<div class="step ${i===S.step?'on':''} ${i<S.step?'done':''}"><div class="ic">${i<S.step?'✓':n[1]}</div>Étape ${i+1}<b>${n[0]}</b></div>`).join('')}</div>
-    <div><div class="form" id="fm"></div><div id="er"></div></div></div></div>`;
-   const f=$('#fm'),nav=(last)=>`<div class="nav2">${S.step?'<button class="btn ghost" id="pv">Retour</button>':'<span></span>'}<button class="btn" id="nx">${last?'Publier':'Continuer'}</button></div>`;
-   if(S.step===0)f.innerHTML=`<h3>Informations générales</h3><p class="sub">Le titre et la description que verront les visiteurs.</p>
-    <div class="fld"><label>Titre de la ressource *</label><input id="t" maxlength="180" value="${esc(S.title)}" placeholder="Ex : LEGEND Garage"><small>${S.title.length}/180 caractères</small></div>
-    <div class="fld"><label>Description détaillée</label><textarea id="d" maxlength="5000" placeholder="Décris la ressource, ce qu'elle contient, les prérequis…">${esc(S.description)}</textarea></div>${nav()}`;
+   $('#app').innerHTML=`<div class="up"><a class="mut" href="#/">← Retour</a>
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-end;margin-top:16px;flex-wrap:wrap"><div><h1 class="t">Ajouter une ressource</h1><p class="mut">Quatre étapes : infos, visuels, fichier, catégorie.</p></div><div class="flash">${ME.admin?'Publication directe (admin)':'Ta ressource sera examinée avant publication'}</div></div>
+    <div class="upgrid"><div class="steps">${names.map((n,i)=>`<div class="step ${i===S.step?'on':''} ${i<S.step?'done':''}"><div class="ic">${i<S.step?'✓':i+1}</div><div>Étape ${i+1}<b>${n}</b></div></div>`).join('')}</div><div><div class="form" id="fm"></div><div id="er"></div></div></div></div>`;
+   const f=$('#fm'),nav=last=>`<div class="nav2">${S.step?'<button class="btn ghost" id="pv">Retour</button>':'<span></span>'}<button class="btn" id="nx">${last?'Publier':'Continuer'}</button></div>`;
+   if(S.step===0)f.innerHTML=`<h3>Informations générales</h3><p class="sub">Le titre et la description visibles par tous.</p>
+    <div class="fld"><label>Titre *</label><input id="t" maxlength="180" value="${esc(S.title)}" placeholder="Ex : LEGEND Garage"><small>${S.title.length}/180</small></div>
+    <div class="fld"><label>Description</label><textarea id="d" maxlength="5000" placeholder="Ce que contient la ressource, les prérequis…">${esc(S.description)}</textarea></div>${nav()}`;
    if(S.step===1)f.innerHTML=`<h3>Visuels</h3><p class="sub">Jusqu'à 5 images (PNG, JPG, WEBP). La première sert de couverture.</p><div class="drop" id="dz">Clique ou glisse tes images ici</div><input type="file" id="fi" accept="image/png,image/jpeg,image/webp" multiple hidden>
     <div class="previews">${S.images.map((m,i)=>`<div><img src="${m.url}"><button data-i="${i}">×</button></div>`).join('')}</div>${nav()}`;
    if(S.step===2)f.innerHTML=`<h3>Fichier</h3><p class="sub">Archive .zip, .rar ou .7z (200 Mo max).</p><div class="drop" id="dz">Clique ou glisse ton archive ici</div><input type="file" id="fi" accept=".zip,.rar,.7z" hidden>
     ${S.file?`<div class="fileok"><span>📦 ${esc(S.file.name)} — ${size(S.file.size)}</span><button class="btn ghost sm" id="rm">Retirer</button></div>`:''}${nav()}`;
-   if(S.step===3)f.innerHTML=`<h3>Catégorie</h3><p class="sub">Choisis où ranger ta ressource.</p><div class="cgrid">${CATS.map(c=>`<div class="cpick ${S.category===c?'on':''}" data-c="${c}">${c}</div>`).join('')}</div>
-    <div class="fld" style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px"><div><label>Version</label><input id="v" value="${esc(S.version)}" placeholder="1.0.0"></div><div><label>Framework</label><select id="fw"><option value="">—</option>${['ESX','QBCore','Standalone'].map(x=>`<option ${S.framework===x?'selected':''}>${x}</option>`).join('')}</select></div></div>
-    <label class="check"><input type="checkbox" id="rt" ${S.rights?'checked':''}><span>Je certifie être l'auteur de cette ressource ou avoir le droit de la partager. Je comprends que les ressources payantes piratées ou volées sont interdites et seront supprimées.</span></label>
-    <div class="prog" id="pg" hidden><i></i></div>${nav(true)}`;
+   if(S.step===3){
+    f.innerHTML=`<h3>Catégorie</h3><p class="sub">Choisis où ranger ta ressource.</p>
+    ${CAT.groups.map(g=>{const cs=g.categories.filter(c=>!c.vipOnly||ME.admin);return cs.length?`<div class="gtitle">${esc(g.name)}</div><div class="cgrid">${cs.map(c=>`<div class="cpick ${c.vipOnly?'v':''} ${S.category===c.id?'on':''}" data-c="${esc(c.id)}">${c.vipOnly?'★ ':''}${esc(c.name)}</div>`).join('')}</div>`:''}).join('')}
+    <div class="grid2" style="margin-top:14px"><div class="fld"><label>Version</label><input id="v" value="${esc(S.version)}" placeholder="1.0.0"></div><div class="fld"><label>Framework</label><select id="fw"><option value="">—</option>${['ESX','QBCore','Standalone'].map(x=>`<option ${S.framework===x?'selected':''}>${x}</option>`).join('')}</select></div></div>
+    <label class="check"><input type="checkbox" id="rt" ${S.rights?'checked':''}><span>Je certifie être l'auteur de cette ressource ou avoir le droit de la partager. Les ressources payantes piratées ou volées sont interdites et seront supprimées.</span></label>
+    <div class="prog" id="pg" hidden><i></i></div>${nav(true)}`;}
    wire();
   };
-  const err=m=>$('#er').innerHTML=m?`<div class="flash err" style="margin-top:14px">${esc(m)}</div>`:'';
   const wire=()=>{
    const dz=$('#dz'),fi=$('#fi');
-   if(dz){dz.onclick=()=>fi.click();['dragover','dragenter'].forEach(e=>dz.addEventListener(e,x=>{x.preventDefault();dz.classList.add('over')}));
-    ['dragleave','drop'].forEach(e=>dz.addEventListener(e,x=>{x.preventDefault();dz.classList.remove('over')}));
-    dz.addEventListener('drop',x=>take(x.dataTransfer.files));fi.onchange=()=>take(fi.files)}
+   if(dz){dz.onclick=()=>fi.click();['dragover','dragenter'].forEach(e=>dz.addEventListener(e,x=>{x.preventDefault();dz.classList.add('over')}));['dragleave','drop'].forEach(e=>dz.addEventListener(e,x=>{x.preventDefault();dz.classList.remove('over')}));dz.addEventListener('drop',x=>take(x.dataTransfer.files));fi.onchange=()=>take(fi.files)}
    $$('.previews button').forEach(b=>b.onclick=()=>{S.images.splice(+b.dataset.i,1);view()});
    const rm=$('#rm');if(rm)rm.onclick=()=>{S.file=null;view()};
    $$('.cpick').forEach(c=>c.onclick=()=>{S.category=c.dataset.c;$$('.cpick').forEach(x=>x.classList.toggle('on',x===c))});
-   const t=$('#t');if(t)t.oninput=()=>{S.title=t.value;t.nextElementSibling.textContent=t.value.length+'/180 caractères'};
+   const t=$('#t');if(t)t.oninput=()=>{S.title=t.value;t.nextElementSibling.textContent=t.value.length+'/180'};
    const d=$('#d');if(d)d.oninput=()=>S.description=d.value;
-   const pv=$('#pv');if(pv)pv.onclick=()=>{save();S.step--;view()};
-   $('#nx').onclick=go;
+   const pv=$('#pv');if(pv)pv.onclick=()=>{save();S.step--;view()};$('#nx').onclick=go;
   };
   const save=()=>{if($('#v'))S.version=$('#v').value;if($('#fw'))S.framework=$('#fw').value;if($('#rt'))S.rights=$('#rt').checked};
   const take=files=>{
    if(S.step===1){for(const f of files){if(S.images.length>=5)break;if(/^image\/(png|jpe?g|webp)$/.test(f.type)&&f.size<8e6)S.images.push({file:f,url:URL.createObjectURL(f)})}}
-   else{const f=files[0];if(f&&/\.(zip|rar|7z)$/i.test(f.name))S.file=f;else err('Format accepté : .zip, .rar, .7z')}
-   view()};
+   else{const f=files[0];if(f&&/\.(zip|rar|7z)$/i.test(f.name))S.file=f;else err('Format accepté : .zip, .rar, .7z')}view()};
   const go=()=>{save();err('');
    if(S.step===0&&!S.title.trim())return err('Le titre est obligatoire.');
    if(S.step===2&&!S.file)return err('Ajoute une archive.');
@@ -187,47 +178,70 @@ function publish(){
    const x=new XMLHttpRequest();x.open('POST','/api/resources');$('#nx').disabled=true;$('#pg').hidden=false;
    x.upload.onprogress=e=>$('#pg i').style.width=(e.loaded/e.total*100)+'%';
    x.onload=()=>{let d={};try{d=JSON.parse(x.responseText)}catch{}
-    if(x.status===200)$('#app').innerHTML=`<div class="up" style="text-align:center"><h1 class="t">${d.status==='approved'?'Ressource publiée !':'Merci !'}</h1><p class="mut" style="margin:14px 0 24px">${d.status==='approved'?'Elle est en ligne.':'Ta ressource sera visible après validation par un admin.'}</p><a class="btn" href="#/">Retour à l'accueil</a></div>`;
-    else{$('#nx').disabled=false;err(d.error||'Échec de l\'envoi')}};
+    if(x.status===200)$('#app').innerHTML=`<div class="up" style="text-align:center"><h1 class="t">${d.status==='approved'?'Ressource publiée !':'Merci !'}</h1><p class="mut" style="margin:14px 0 24px">${d.status==='approved'?'Elle est en ligne.':'Elle sera visible après validation par un admin.'}</p><a class="btn" href="#/">Retour à l'accueil</a></div>`;
+    else{$('#nx').disabled=false;err(d.error||"Échec de l'envoi")}};
    x.onerror=()=>{$('#nx').disabled=false;err('Erreur réseau.')};x.send(fd)};
   view();
 }
 
-function rules(){$('#app').innerHTML=`<div class="up"><h1 class="t">Règles &amp; signalement</h1><div class="panel desc" style="margin-top:22px">Tu ne peux partager que des ressources dont tu es l'auteur, ou dont la licence l'autorise (gratuites, open source).
-Les scripts payants piratés, crackés ou volés sont interdits : ils sont supprimés et leurs auteurs bannis.
-
-Un contenu pose problème ? Utilise le bouton « Signaler » sur la page de la ressource, ou contacte-nous sur Discord. Les titulaires de droits peuvent demander le retrait d'une ressource, traité rapidement.</div></div>`}
-
+/* ---------- classement ---------- */
 async function ranking(period='week'){
   const d=await j('/api/ranking?period='+period).catch(()=>({list:[],lastWeekWinner:null}));
   const av=(u,s)=>u.avatar?`<img class="pav" width="${s}" height="${s}" src="${esc(u.avatar)}" alt="">`:`<div class="pav" style="width:${s}px;height:${s}px">${esc((u.name||'?')[0].toUpperCase())}</div>`;
   const tag=u=>u.admin?'<span class="badge2">ADMIN</span>':'';
-  const max=Math.max(1,...d.list.map(u=>u.downloads));
-  const top=d.list.slice(0,3),rest=d.list.slice(3);
-  const w=d.lastWeekWinner;
-  $('#app').innerHTML=`<div class="wrap" style="padding-bottom:90px"><div style="margin:40px 0 0"><div class="eb">Communauté</div><h1 class="t">Classement des créateurs</h1><p class="mut" style="margin-top:8px">Ceux dont les ressources sont les plus téléchargées.</p></div>
+  const max=Math.max(1,...d.list.map(u=>u.downloads)),top=d.list.slice(0,3),rest=d.list.slice(3),w=d.lastWeekWinner;
+  $('#app').innerHTML=`<div class="wrap" style="padding-bottom:90px"><div style="margin:44px 0 0"><div class="eb">Communauté</div><h1 class="t">Classement des créateurs</h1><p class="mut" style="margin-top:8px">Ceux dont les ressources sont les plus téléchargées.</p></div>
    <div class="rk-tabs">${[['week','7 jours'],['month','30 jours'],['all','Depuis toujours']].map(t=>`<button class="rk-tab ${t[0]===period?'on':''}" data-p="${t[0]}">${t[1]}</button>`).join('')}</div>
    ${w?`<div class="wchip"><span>♛</span><span>Gagnant de la semaine dernière :</span><b>${esc(w.name)}</b><span>${w.downloads} ↓</span></div>`:''}
-   ${top.length?`<div class="pod2">${[1,0,2].filter(i=>top[i]).map(i=>{const u=top[i];return `<div class="pcol p${i+1}"><div class="pw">${av(u,i?60:84)}<span class="medal">${i+1}</span></div><h3>${esc(u.name)}${tag(u)}</h3><small>↓ ${u.downloads} · ▣ ${u.resources}</small><div class="ped">${i+1}</div></div>`}).join('')}</div>`:'<p class="empty">Personne au classement pour le moment. Publie une ressource pour ouvrir le bal !</p>'}
+   ${top.length?`<div class="pod2">${[1,0,2].filter(i=>top[i]).map(i=>{const u=top[i];return `<div class="pcol p${i+1}"><div class="pw">${av(u,i?60:84)}<span class="medal">${i+1}</span></div><h3>${esc(u.name)}${tag(u)}</h3><small>↓ ${u.downloads} · ▣ ${u.resources}</small><div class="ped">${i+1}</div></div>`}).join('')}</div>`:'<p class="empty">Personne au classement pour le moment.</p>'}
    ${rest.length?`<div class="rlist">${rest.map((u,i)=>`<div class="rrow"><span class="n">#${i+4}</span><div class="who">${av(u,36)}<b>${esc(u.name)}</b>${tag(u)}</div><div class="bar2"><i style="width:${Math.max(3,u.downloads/max*100)}%"></i></div><span class="num">↓ ${u.downloads}</span><span class="num">▣ ${u.resources}</span></div>`).join('')}</div>`:''}</div>`;
   $$('.rk-tab').forEach(b=>b.onclick=()=>ranking(b.dataset.p));
 }
+
+/* ---------- VIP + règles ---------- */
+function vipPage(){
+  const v=ME.vip, status=!ME.user?`<a class="btn" href="/auth/login">Connexion Discord</a>`
+    :v.active?`<div class="flash vip">★ Ton VIP est actif ${v.until===null?'<b>à vie</b>':`jusqu'au <b>${fdate(v.until)}</b>`}.</div>`
+    :`<div class="flash">Tu n'as pas de VIP pour le moment.</div>`;
+  const vipCats=allCats().filter(c=>c.vipOnly);
+  $('#app').innerHTML=`<div class="up" style="max-width:760px"><div class="eb">Passe VIP</div><h1 class="t">Accès exclusif</h1>
+   <p class="mut" style="margin:10px 0 24px">Le VIP donne accès aux ressources marquées ★ : ${vipCats.length?vipCats.map(c=>`<b style="color:var(--vip)">${esc(c.name)}</b>`).join(', '):'catégories exclusives'}. Il est attribué par l'équipe pour une durée limitée ou à vie, et s'arrête automatiquement à la fin de la période.</p>
+   ${status}<div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap"><a class="btn vip" href="${DISCORD_URL}" target="_blank" rel="noopener">Demander le VIP sur Discord</a><a class="btn ghost" href="#/ressources">Parcourir</a></div></div>`;
+}
+function rules(){$('#app').innerHTML=`<div class="up" style="max-width:760px"><h1 class="t">Règles &amp; signalement</h1><div class="panel desc" style="margin-top:22px">Tu ne peux partager que des ressources dont tu es l'auteur, ou dont la licence l'autorise (gratuites, open source).
+Les scripts payants piratés, crackés ou volés sont interdits : ils sont supprimés et leurs auteurs bannis.
+
+Un contenu pose problème ? Utilise le bouton « Signaler » sur la page de la ressource, ou contacte-nous sur Discord. Les titulaires de droits peuvent demander le retrait d'une ressource, traité rapidement.</div></div>`}
+
+/* ---------- palette de recherche (Ctrl+K) ---------- */
+let palIdx=0,palItems=[];
+async function openPal(){ if(!RES.length)await loadRes(); $('#pal').classList.add('open'); const q=$('#pq');q.value='';q.focus();palDraw() }
+function closePal(){ $('#pal').classList.remove('open') }
+function palDraw(){
+  const q=$('#pq').value.toLowerCase().trim();
+  palItems=(q?RES.filter(r=>(r.title+r.categoryName+r.authorName).toLowerCase().includes(q)):[...RES].sort((a,b)=>b.downloads-a.downloads)).slice(0,8);
+  palIdx=Math.min(palIdx,Math.max(0,palItems.length-1));
+  $('#pl').innerHTML=(palItems.length?`<div class="palh">${q?'Résultats':'Populaires'}</div>`:'')+palItems.map((r,i)=>`<div class="pali ${i===palIdx?'on':''}" data-i="${i}"><div class="fth" ${cover(r)}></div><div><div>${esc(r.title)}</div></div><small>${esc(r.categoryName)}</small></div>`).join('')||'<div class="palh">Aucun résultat</div>';
+  $$('#pl .pali').forEach(e=>e.onclick=()=>palGo(+e.dataset.i));
+}
+function palGo(i){const r=palItems[i];if(r){closePal();location.hash='#/r/'+r.id}}
+$('#pq').oninput=()=>{palIdx=0;palDraw()};
+$('#pq').onkeydown=e=>{
+  if(e.key==='ArrowDown'){e.preventDefault();palIdx=Math.min(palItems.length-1,palIdx+1);palDraw()}
+  else if(e.key==='ArrowUp'){e.preventDefault();palIdx=Math.max(0,palIdx-1);palDraw()}
+  else if(e.key==='Enter')palGo(palIdx);else if(e.key==='Escape')closePal()};
+$('#pal').onclick=e=>{if(e.target.id==='pal')closePal()};
+addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPal()}});
+$('#sbtn').onclick=openPal;
+
+/* ---------- routeur ---------- */
 function route(){
   const [,a,b,c]=(location.hash||'#/').split('/');scrollTo(0,0);
-  $$('#links a').forEach(l=>l.classList.toggle('on',l.dataset.r===(a||'home')));$('#links').classList.remove('open');
-  ({ressources:()=>list(decodeURIComponent(b||'Toutes'),c||'new'),tools:()=>b==='loading-screen'?loadingScreen():home(),classement:()=>ranking(),r:()=>detail(b),publier:publish,regles:rules}[a]||home)();
+  $$('#links a[data-r]').forEach(l=>l.classList.toggle('on',l.dataset.r===(a==='r'?'ressources':a||'home')));$('#links').classList.remove('open');
+  ({ressources:()=>list(decodeURIComponent(b||'all'),c||'new'),tools:()=>b==='loading-screen'?loadingScreen():home(),classement:()=>ranking(),r:()=>detail(b),publier:publish,vip:vipPage,regles:rules}[a]||home)();
 }
 addEventListener('hashchange',route);
 $('#bg').onclick=()=>$('#links').classList.toggle('open');
 $$('.dd > a').forEach(a=>a.addEventListener('click',e=>{if(innerWidth<=900&&!a.parentElement.classList.contains('open')){e.preventDefault();a.parentElement.classList.add('open')}}));
-$('#gs').onkeydown=e=>{if(e.key==='Enter'){const q=e.target.value;location.hash='#/ressources';setTimeout(()=>window.__q?.(q),250)}};
 boot();
 </script></body></html>
-
-
-
-
-
-
-
-
