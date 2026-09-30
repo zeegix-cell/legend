@@ -322,5 +322,5 @@ createStore(DATA).then(store => {
   app.use(express.static(path.join(__dirname, 'public'), { index: 'index.html' }));
   app.use((err, req, res, next) => { console.error(err); res.status(500).json({ error: 'Erreur serveur.' }); });
 
-  app.listen(PORT, () => console.log(`Site sur ${BASE_URL} (${admins.size} admin(s))`));
+  app.listen(PORT, '0.0.0.0', () => console.log(`Site sur ${BASE_URL} - ecoute sur le port ${PORT} (${admins.size} admin(s))`));
 }).catch(e => { console.error('Impossible d\'initialiser le stockage :', e.message); process.exit(1); });
