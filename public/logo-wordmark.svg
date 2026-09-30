@@ -1,0 +1,5 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 64" width="720" height="128">
+  <path fill="#ff4a00" d="M4 4h44l12 12v44H16L4 48z"/>
+  <path fill="#050505" d="M19 15h11v27h17v9H19z"/>
+  <text x="84" y="46" fill="#ffffff" font-family="'Chakra Petch','Segoe UI',Arial,sans-serif" font-weight="700" font-size="40" letter-spacing="9">LEGEND</text>
+</svg>

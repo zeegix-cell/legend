@@ -1,0 +1,38 @@
+﻿<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LEGEND — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head>
+<body>
+<nav class="top"><div class="wrap nav-in"><a class="logo" href="/"><i></i>LEGEND · ADMIN</a>
+<div class="nright"><a class="btn ghost sm" href="/">Site</a><button class="btn ghost sm" id="lo">Quitter</button></div></div></nav>
+<main class="wrap" style="padding:40px 24px 80px;max-width:900px">
+  <div class="eb">Modération</div><h1 class="t" style="margin-bottom:20px">Panel admin</h1>
+  <div class="bar"><select id="flt" style="width:220px"><option value="pending">En attente</option><option value="approved">Publiées</option><option value="rejected">Refusées</option><option value="all">Toutes</option></select></div>
+  <div id="list"></div>
+  <h2 style="margin:40px 0 14px;font-size:1.2rem">Signalements</h2><div id="rp"></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const post=(u,b)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+let ALL=[];
+async function load(){
+  ALL=await fetch('/api/admin/resources').then(r=>r.json());
+  const f=$('#flt').value,l=ALL.filter(r=>f==='all'||r.status===f);
+  $('#list').innerHTML=l.map(r=>`<div class="row"><div><a href="/#/r/${esc(r.id)}" target="_blank"><b>${esc(r.title)}</b></a>
+   <div class="mut" style="font-size:.8rem">${esc(r.authorName)} · ${esc(r.category)} · ${Math.ceil(r.fileSize/1024)} Ko · <span class="tag ${esc(r.status)}">${esc(r.status)}</span></div></div>
+   <div class="acts">${r.status!=='approved'?`<button class="btn sm" data-a="approved" data-id="${esc(r.id)}">Valider</button>`:''}${r.status!=='rejected'?`<button class="btn ghost sm" data-a="rejected" data-id="${esc(r.id)}">Refuser</button>`:''}<button class="btn danger sm" data-a="del" data-id="${esc(r.id)}">Supprimer</button></div></div>`).join('')||'<p class="empty" style="padding:30px">Rien ici.</p>';
+  document.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{
+    if(b.dataset.a==='del'){if(!confirm('Supprimer définitivement ?'))return;await fetch('/api/admin/resources/'+b.dataset.id,{method:'DELETE'})}
+    else await post(`/api/admin/resources/${b.dataset.id}/status`,{status:b.dataset.a});
+    load()});
+  const rp=await fetch('/api/admin/reports').then(r=>r.json());
+  $('#rp').innerHTML=rp.map(x=>{const r=ALL.find(y=>y.id===x.resourceId);return `<div class="row"><div><b>${esc(r?r.title:'(supprimée)')}</b><div class="mut" style="font-size:.82rem">${esc(x.by)} : ${esc(x.reason)}</div></div><button class="btn ghost sm" data-r="${esc(x.id)}">Classer</button></div>`}).join('')||'<p class="mut">Aucun signalement.</p>';
+  document.querySelectorAll('[data-r]').forEach(b=>b.onclick=async()=>{await fetch('/api/admin/reports/'+b.dataset.r,{method:'DELETE'});load()});
+}
+$('#flt').onchange=load;
+$('#lo').onclick=async()=>{await fetch('/auth/logout',{method:'POST'});location.href='/'};
+load();
+</script></body></html>
+

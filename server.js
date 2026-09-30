@@ -1,0 +1,221 @@
+require('dotenv').config();
+const express = require('express');
+const session = require('express-session');
+const multer = require('multer');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+const {
+  PORT = 3000, BASE_URL = 'http://localhost:3000', SESSION_SECRET,
+  DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, ADMIN_IDS = '', MAX_UPLOAD_MB = '200'
+} = process.env;
+
+if (!SESSION_SECRET || !DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
+  console.error('Configure .env (SESSION_SECRET, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET).');
+  process.exit(1);
+}
+const admins = new Set(ADMIN_IDS.split(',').map(s => s.trim()).filter(Boolean).slice(0, 2));
+const REDIRECT = `${BASE_URL}/auth/callback`;
+const CATEGORIES = ['Scripts', 'Mappings', 'Vehicules', 'Armes', 'Bases', 'Bundles', 'UI', 'Loading Screen', 'Autres'];
+
+const DATA = path.join(__dirname, 'data');
+const FILES = path.join(__dirname, 'uploads', 'files');    // archives : jamais servies en statique
+const IMGS = path.join(__dirname, 'uploads', 'images');
+[DATA, FILES, IMGS].forEach(d => fs.mkdirSync(d, { recursive: true }));
+const DB = path.join(DATA, 'resources.json');
+const RP = path.join(DATA, 'reports.json');
+const DL = path.join(DATA, 'downloads.json');   // journal : { rid, aid, at }
+const read = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return []; } };
+const write = (f, d) => fs.writeFileSync(f, JSON.stringify(d, null, 2));
+
+const app = express();
+app.set('trust proxy', 1);
+app.use(express.json({ limit: '50kb' }));
+app.use(session({
+  secret: SESSION_SECRET, resave: false, saveUninitialized: false,
+  cookie: { httpOnly: true, sameSite: 'lax', secure: BASE_URL.startsWith('https'), maxAge: 7 * 864e5 }
+}));
+
+// Anti-CSRF simple : les ecritures doivent venir de notre propre site
+app.use((req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const o = req.get('origin');
+  if (o && o !== new URL(BASE_URL).origin) return res.status(403).json({ error: 'origin' });
+  next();
+});
+
+const isAdmin = req => !!req.session.user && admins.has(req.session.user.id);
+const requireUser = (req, res, next) => req.session.user ? next() : res.status(401).json({ error: 'login' });
+const requireAdmin = (req, res, next) => isAdmin(req) ? next() : res.status(403).json({ error: 'forbidden' });
+
+// ---------- Discord OAuth2 ----------
+app.get('/auth/login', (req, res) => {
+  const state = crypto.randomBytes(16).toString('hex');
+  req.session.state = state;
+  const q = new URLSearchParams({
+    client_id: DISCORD_CLIENT_ID, redirect_uri: REDIRECT,
+    response_type: 'code', scope: 'identify', state, prompt: 'none'
+  });
+  res.redirect('https://discord.com/oauth2/authorize?' + q);
+});
+
+app.get('/auth/callback', async (req, res) => {
+  const { code, state } = req.query;
+  if (!code || !state || state !== req.session.state) return res.status(400).send('Etat invalide.');
+  delete req.session.state;
+  try {
+    const tok = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID, client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code', code, redirect_uri: REDIRECT
+      })
+    }).then(r => r.json());
+    if (!tok.access_token) throw new Error('token');
+    const u = await fetch('https://discord.com/api/users/@me', {
+      headers: { Authorization: `Bearer ${tok.access_token}` }
+    }).then(r => r.json());
+    req.session.user = {
+      id: u.id, name: u.global_name || u.username,
+      avatar: u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=128` : null
+    };
+    res.redirect(admins.has(u.id) ? '/admin' : '/');
+  } catch { res.status(500).send('Connexion Discord impossible.'); }
+});
+app.post('/auth/logout', (req, res) => req.session.destroy(() => res.json({ ok: true })));
+app.get('/api/me', (req, res) => res.json({ user: req.session.user || null, admin: isAdmin(req) }));
+
+// ---------- Ressources ----------
+const pub = r => ({
+  id: r.id, title: r.title, description: r.description, category: r.category,
+  version: r.version, framework: r.framework, images: r.images,
+  fileName: r.fileName, fileSize: r.fileSize, authorName: r.authorName,
+  views: r.views, downloads: r.downloads, createdAt: r.createdAt, status: r.status
+});
+
+app.get('/api/categories', (req, res) => res.json(CATEGORIES));
+
+app.get('/api/resources', (req, res) =>
+  res.json(read(DB).filter(r => r.status === 'approved').map(pub)));
+
+app.get('/api/resources/:id', (req, res) => {
+  const list = read(DB), r = list.find(x => x.id === req.params.id);
+  if (!r || (r.status !== 'approved' && !isAdmin(req) && r.authorId !== req.session.user?.id))
+    return res.status(404).json({ error: 'not found' });
+  if (r.status === 'approved') { r.views++; write(DB, list); }
+  res.json(pub(r));
+});
+
+const IMG_EXT = ['.png', '.jpg', '.jpeg', '.webp'];
+const ARC_EXT = ['.zip', '.rar', '.7z'];
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, f, cb) => cb(null, f.fieldname === 'file' ? FILES : IMGS),
+    filename: (req, f, cb) => cb(null, crypto.randomBytes(16).toString('hex') + path.extname(f.originalname).toLowerCase())
+  }),
+  limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024, files: 6 },
+  fileFilter: (req, f, cb) => {
+    const ext = path.extname(f.originalname).toLowerCase();
+    const ok = f.fieldname === 'file' ? ARC_EXT.includes(ext) : f.fieldname === 'images' && IMG_EXT.includes(ext) && f.mimetype.startsWith('image/');
+    cb(ok ? null : new Error('type de fichier refuse'), ok);
+  }
+}).fields([{ name: 'file', maxCount: 1 }, { name: 'images', maxCount: 5 }]);
+
+const hits = new Map(); // limite : 10 publications / heure / utilisateur
+app.post('/api/resources', requireUser, (req, res) => {
+  const now = Date.now(), uid = req.session.user.id;
+  const recent = (hits.get(uid) || []).filter(t => now - t < 36e5);
+  if (recent.length >= 10 && !isAdmin(req)) return res.status(429).json({ error: 'Trop de publications, reessaie plus tard.' });
+
+  upload(req, res, err => {
+    const cleanup = () => Object.values(req.files || {}).flat().forEach(f => fs.unlink(f.path, () => {}));
+    if (err) { cleanup(); return res.status(400).json({ error: err.message }); }
+    const b = req.body, file = req.files?.file?.[0];
+    if (!file || !b.title || b.title.length > 180 || !CATEGORIES.includes(b.category) || b.rights !== 'true') {
+      cleanup(); return res.status(400).json({ error: 'Champs invalides (titre, categorie, archive, confirmation des droits).' });
+    }
+    hits.set(uid, [...recent, now]);
+    const item = {
+      id: crypto.randomUUID(), title: b.title.trim(), description: String(b.description || '').slice(0, 5000),
+      category: b.category, version: String(b.version || '').slice(0, 20), framework: String(b.framework || '').slice(0, 30),
+      images: (req.files.images || []).map(f => f.filename), file: file.filename,
+      fileName: path.basename(file.originalname).slice(0, 120), fileSize: file.size,
+      authorId: uid, authorName: req.session.user.name, authorAvatar: req.session.user.avatar || '',
+      status: isAdmin(req) ? 'approved' : 'pending', views: 0, downloads: 0, createdAt: now
+    };
+    const list = read(DB); list.unshift(item); write(DB, list);
+    res.json({ id: item.id, status: item.status });
+  });
+});
+
+app.get('/api/resources/:id/download', requireUser, (req, res) => {
+  const list = read(DB), r = list.find(x => x.id === req.params.id);
+  if (!r || (r.status !== 'approved' && !isAdmin(req))) return res.status(404).send('Introuvable');
+  r.downloads++; write(DB, list);
+  const log = read(DL); log.push({ rid: r.id, aid: r.authorId, at: Date.now() }); write(DL, log);
+  res.download(path.join(FILES, r.file), r.fileName);
+});
+
+app.post('/api/resources/:id/report', requireUser, (req, res) => {
+  const reason = String(req.body?.reason || '').slice(0, 500);
+  if (!reason) return res.status(400).json({ error: 'raison requise' });
+  const rp = read(RP);
+  rp.unshift({ id: crypto.randomUUID(), resourceId: req.params.id, reason, by: req.session.user.name, at: Date.now() });
+  write(RP, rp); res.json({ ok: true });
+});
+
+// ---------- Classement des createurs ----------
+const DAY = 864e5;
+function ranking(from, to) {
+  const res = read(DB).filter(r => r.status === 'approved');
+  const by = new Map();
+  for (const r of res) {
+    const a = by.get(r.authorId) || { id: r.authorId, name: r.authorName, avatar: r.authorAvatar || '', downloads: 0, resources: 0 };
+    a.resources++; a.avatar = a.avatar || r.authorAvatar || ''; by.set(r.authorId, a);
+  }
+  const ok = new Set(res.map(r => r.id));
+  const all = from === 0 && to === Infinity;
+  for (const d of read(DL)) {
+    if (d.at < from || d.at >= to || !ok.has(d.rid)) continue;
+    const a = by.get(d.aid); if (a) a.downloads++;
+  }
+  return [...by.values()].filter(a => all || a.downloads > 0)
+    .sort((x, y) => y.downloads - x.downloads || y.resources - x.resources)
+    .map(a => ({ ...a, admin: admins.has(a.id) }));
+}
+app.get('/api/ranking', (req, res) => {
+  const now = Date.now();
+  const p = { week: [now - 7 * DAY, Infinity], month: [now - 30 * DAY, Infinity], all: [0, Infinity] }[req.query.period] || [now - 7 * DAY, Infinity];
+  res.json({ list: ranking(...p).slice(0, 50), lastWeekWinner: ranking(now - 14 * DAY, now - 7 * DAY)[0] || null });
+});
+
+app.use('/img', express.static(IMGS, { maxAge: '7d', index: false, dotfiles: 'deny' }));
+
+// ---------- Admin ----------
+app.get('/api/admin/resources', requireAdmin, (req, res) => res.json(read(DB).map(pub)));
+app.get('/api/admin/reports', requireAdmin, (req, res) => res.json(read(RP)));
+app.post('/api/admin/resources/:id/status', requireAdmin, (req, res) => {
+  const s = req.body?.status;
+  if (!['approved', 'rejected', 'pending'].includes(s)) return res.status(400).json({ error: 'status' });
+  const list = read(DB), r = list.find(x => x.id === req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  r.status = s; write(DB, list); res.json({ ok: true });
+});
+app.delete('/api/admin/resources/:id', requireAdmin, (req, res) => {
+  const list = read(DB), r = list.find(x => x.id === req.params.id);
+  if (r) {
+    fs.unlink(path.join(FILES, r.file), () => {});
+    r.images.forEach(i => fs.unlink(path.join(IMGS, i), () => {}));
+  }
+  write(DB, list.filter(x => x.id !== req.params.id)); res.json({ ok: true });
+});
+app.delete('/api/admin/reports/:id', requireAdmin, (req, res) => {
+  write(RP, read(RP).filter(x => x.id !== req.params.id)); res.json({ ok: true });
+});
+app.get('/admin', (req, res) =>
+  isAdmin(req) ? res.sendFile(path.join(__dirname, 'public', 'admin.html')) : res.redirect('/'));
+
+app.use(express.static(path.join(__dirname, 'public'), { index: 'index.html' }));
+app.listen(PORT, () => console.log(`Site sur ${BASE_URL} (${admins.size} admin(s))`));
