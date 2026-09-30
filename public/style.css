@@ -249,3 +249,17 @@ nav.compact .navp:not(:hover) .btn{gap:0;padding:0 11px}
 nav.compact .navp:not(:hover) .vbadge{display:none}
 nav.top .btn .ic{width:16px;height:16px}
 @media(max-width:900px){nav.compact .navp:not(:hover){max-width:none}.lbl{max-width:none!important;opacity:1!important}.links>a,.dd>a{gap:10px}}
+
+/* --- barre du haut v2 : animation plus lente, sans artefacts --- */
+/* le flou d'arriere-plan sur un element qui change de taille laisse des traces : on le retire de la barre */
+.navp{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(14,14,17,.92);
+  transition:max-width .8s cubic-bezier(.22,.8,.24,1) .12s,padding .8s cubic-bezier(.22,.8,.24,1) .12s,background .3s,box-shadow .5s}
+/* ouverture : la barre s'elargit un peu AVANT que les textes apparaissent (plus de debordement) */
+nav.top .lbl,nav.top .car{transition:max-width 1s cubic-bezier(.22,.8,.24,1) .12s,opacity .6s ease .25s}
+nav.top .car{display:inline-block;max-width:12px;overflow:hidden}
+nav.top .links>a,nav.top .dd>a,nav.top .btn,nav.top .logo{transition:gap .8s cubic-bezier(.22,.8,.24,1) .12s,padding .8s cubic-bezier(.22,.8,.24,1) .12s,margin .8s cubic-bezier(.22,.8,.24,1) .12s,background .15s,color .15s,border-color .15s,transform .15s}
+/* fermeture : les textes disparaissent AVANT que la barre se referme */
+nav.compact .navp:not(:hover){transition:max-width .9s cubic-bezier(.22,.8,.24,1),padding .9s cubic-bezier(.22,.8,.24,1),background .3s,box-shadow .5s}
+nav.compact .navp:not(:hover) .lbl,nav.compact .navp:not(:hover) .car{max-width:0;opacity:0;display:inline-block;transition:max-width .55s cubic-bezier(.22,.8,.24,1),opacity .3s ease}
+nav.compact .navp:not(:hover) .links>a,nav.compact .navp:not(:hover) .dd>a,nav.compact .navp:not(:hover) .btn,nav.compact .navp:not(:hover) .logo{transition:gap .55s cubic-bezier(.22,.8,.24,1),padding .55s cubic-bezier(.22,.8,.24,1),margin .55s cubic-bezier(.22,.8,.24,1),background .15s,color .15s,border-color .15s,transform .15s}
+@media(max-width:900px){.navp,nav.top .lbl,nav.top .car{transition:none}}
