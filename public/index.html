@@ -7,20 +7,20 @@
 <link rel="stylesheet" href="/style.css"></head>
 <body>
 <nav class="top"><div class="navp">
-  <a class="logo" href="#/"><i></i>LEGEND</a>
+  <a class="logo" href="#/" title="Accueil"><i></i><span class="lbl">LEGEND</span></a>
   <div class="links" id="links">
-    <a href="#/" data-r="home">Accueil</a>
-    <div class="dd"><a href="#/ressources" data-r="ressources">Ressources <i class="car">▾</i></a><div class="menu" id="mres"></div></div>
-    <a href="#/classement" data-r="classement">Classement</a>
-    <div class="dd"><a href="#/tools/loading-screen" data-r="tools">Tools <i class="car">▾</i></a>
+    <a href="#/" data-r="home" title="Accueil"><svg class="ic" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span class="lbl">Accueil</span></a>
+    <div class="dd"><a href="#/ressources" data-r="ressources" title="Ressources"><svg class="ic" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8"/></svg><span class="lbl">Ressources</span><i class="car">▾</i></a><div class="menu" id="mres"></div></div>
+    <a href="#/classement" data-r="classement" title="Classement"><svg class="ic" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg><span class="lbl">Classement</span></a>
+    <div class="dd"><a href="#/tools/loading-screen" data-r="tools" title="Tools"><svg class="ic" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg><span class="lbl">Tools</span><i class="car">▾</i></a>
       <div class="menu"><a href="#/tools/loading-screen"><span>Écran de chargement<small>Crée et exporte ton loading screen</small></span></a></div></div>
-    <a href="#/vip" data-r="vip" style="color:var(--vip)">★ VIP</a>
-    <div class="dd"><a href="#/regles" data-r="regles">À propos <i class="car">▾</i></a>
+    <a href="#/vip" data-r="vip" title="VIP" style="color:var(--vip)"><svg class="ic" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg><span class="lbl">VIP</span></a>
+    <div class="dd"><a href="#/regles" data-r="regles" title="À propos"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><span class="lbl">À propos</span><i class="car">▾</i></a>
       <div class="menu"><a href="#/regles">Règles &amp; signalement</a><a class="dcl" target="_blank" rel="noopener">Discord</a></div></div>
   </div>
   <div class="nright">
-    <button class="btn ghost sm" id="sbtn">Rechercher <span class="kbd">Ctrl K</span></button>
-    <a class="btn sm plus" href="#/publier" title="Publier une ressource">+</a>
+    <button class="btn ghost sm" id="sbtn" title="Rechercher (Ctrl K)"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span class="lbl">Rechercher</span><span class="kbd lbl">Ctrl K</span></button>
+    <a class="btn sm plus" href="#/publier" title="Publier une ressource"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></a>
     <span id="auth" style="display:flex;gap:8px;align-items:center"></span>
     <button class="burger" id="bg" aria-label="Menu">☰</button>
   </div>
@@ -31,6 +31,7 @@
 <div class="pal" id="pal"><div class="palb"><input id="pq" placeholder="Rechercher une ressource…" autocomplete="off"><div class="pall" id="pl"></div></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="/ui.js"></script>
 <script src="/loading-screen.js"></script>
 <script>
 const DISCORD_URL='https://discord.gg/';   // <- ton invitation
@@ -47,8 +48,8 @@ const canVip=()=>ME.admin||ME.vip.active;
 async function boot(){
   ME=await j('/api/me').catch(()=>ME); CAT=await j('/api/catalog').catch(()=>CAT);
   $('#auth').innerHTML=ME.user
-   ?`${ME.admin?'<a class="btn ghost sm" href="/admin">Admin</a>':''}${ME.vip.active?'<span class="vbadge">VIP</span>':''}${ME.user.avatar?`<img class="avatar" src="${esc(ME.user.avatar)}" alt="">`:''}<button class="btn ghost sm" id="lo">Quitter</button>`
-   :`<a class="btn sm" href="/auth/login">Connexion</a>`;
+   ?`${ME.admin?`<a class="btn ghost sm" href="/admin" title="Admin"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/></svg><span class="lbl">Admin</span></a>`:''}${ME.vip.active?'<span class="vbadge">VIP</span>':''}${ME.user.avatar?`<img class="avatar" src="${esc(ME.user.avatar)}" alt="">`:''}<button class="btn ghost sm" id="lo" title="Déconnexion"><svg class="ic" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/></svg><span class="lbl">Quitter</span></button>`
+   :`<a class="btn sm" href="/auth/login" title="Connexion"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span class="lbl">Connexion</span></a>`;
   const lo=$('#lo');if(lo)lo.onclick=async()=>{await fetch('/auth/logout',{method:'POST'});location.reload()};
   $('#mres').innerHTML=`<a href="#/ressources/all/top">★ Populaires</a><a href="#/ressources/all/new">＋ Nouveautés</a>`+CAT.groups.map(g=>`<div class="ml">${esc(g.name)}</div>${g.categories.map(c=>`<a class="${c.vipOnly?'v':''}" href="#/ressources/${encodeURIComponent(c.id)}"><span>${c.vipOnly?'★ ':''}${esc(c.name)}</span></a>`).join('')}`).join('');
   $$('.dcl').forEach(a=>a.href=DISCORD_URL);
@@ -241,6 +242,8 @@ function route(){
   ({ressources:()=>list(decodeURIComponent(b||'all'),c||'new'),tools:()=>b==='loading-screen'?loadingScreen():home(),classement:()=>ranking(),r:()=>detail(b),publier:publish,vip:vipPage,regles:rules}[a]||home)();
 }
 addEventListener('hashchange',route);
+// la barre du haut se reduit en icones quand on descend (avec une marge pour eviter le clignotement)
+(()=>{const nav=$('nav.top');let c=false;const on=()=>{const y=scrollY;if(innerWidth<=900){c=false}else if(!c&&y>70)c=true;else if(c&&y<30)c=false;nav.classList.toggle('compact',c)};addEventListener('scroll',on,{passive:true});addEventListener('resize',on)})();
 $('#bg').onclick=()=>$('#links').classList.toggle('open');
 $$('.dd > a').forEach(a=>a.addEventListener('click',e=>{if(innerWidth<=900&&!a.parentElement.classList.contains('open')){e.preventDefault();a.parentElement.classList.add('open')}}));
 boot();

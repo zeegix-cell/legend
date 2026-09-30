@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LEGEND — Admin</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -12,6 +12,7 @@
   <div class="tabs" id="tabs"><button class="tab on" data-t="mod">Modération</button><button class="tab" data-t="cats">Catégories</button><button class="tab" data-t="vip">VIP</button><button class="tab" data-t="rep">Signalements</button></div>
   <div id="box"></div>
 </main>
+<script src="/ui.js"></script>
 <script>
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -97,3 +98,4 @@ $$('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;$$('.tab').forEach(x=>x.cla
 $('#lo').onclick=async()=>{await fetch('/auth/logout',{method:'POST'});location.href='/'};
 mod().catch(fail);
 </script></body></html>
+

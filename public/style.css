@@ -219,3 +219,33 @@ footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px}
  .rrow{grid-template-columns:36px 1fr 60px 60px}.rrow .bar2{display:none}.hero{padding-top:50px}.kbd{display:none}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* --- menus deroulants personnalises --- */
+.sel{position:relative;width:100%}
+.sel select{display:none}
+.selb{width:100%;height:40px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--s1);color:var(--txt);cursor:pointer;font-size:.9rem;text-align:left;transition:border-color .15s,box-shadow .15s,background .15s}
+.selb:hover{border-color:var(--line2);background:var(--s2)}
+.sel.open .selb{border-color:var(--line2);box-shadow:0 0 0 3px rgba(255,255,255,.05)}
+.selb:disabled{opacity:.5;cursor:not-allowed}
+.selb i{font-style:normal;font-size:.65rem;color:var(--dim);transition:transform .2s}.sel.open .selb i{transform:rotate(180deg)}
+.selm{display:none;position:absolute;left:0;top:calc(100% + 6px);min-width:100%;width:max-content;max-width:320px;max-height:270px;overflow:auto;z-index:80;padding:6px;border:1px solid var(--line2);border-radius:14px;background:rgba(20,20,24,.98);backdrop-filter:blur(16px);box-shadow:0 24px 60px -12px #000;animation:pop .16s both}
+.sel.open .selm{display:block}.sel.up .selm{top:auto;bottom:calc(100% + 6px)}
+.selo{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:9px 10px;border-radius:9px;font-size:.88rem;color:var(--mut);cursor:pointer;transition:background .1s,color .1s}
+.selo:hover{background:var(--s3);color:var(--txt)}.selo.on{color:var(--txt)}.selo em{font-style:normal;color:var(--a);font-size:.8rem}
+.bar .sel{width:200px}
+
+/* --- barre du haut : se reduit en icones au defilement --- */
+.ic{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.lbl{display:inline-block;max-width:150px;overflow:hidden;white-space:nowrap;vertical-align:middle;transition:max-width .4s cubic-bezier(.2,.7,.2,1),opacity .25s}
+.navp{transition:max-width .45s cubic-bezier(.2,.7,.2,1),background .3s,box-shadow .3s,padding .3s}
+.links>a,.dd>a{gap:8px}
+nav.compact .navp:not(:hover){max-width:500px;padding:0 10px;background:rgba(14,14,17,.9);box-shadow:0 14px 44px -14px #000}
+nav.compact .navp:not(:hover) .lbl{max-width:0;opacity:0}
+nav.compact .navp:not(:hover) .car{display:none}
+nav.compact .navp:not(:hover) .logo{margin-right:6px;gap:0}
+nav.compact .navp:not(:hover) .links{justify-content:center}
+nav.compact .navp:not(:hover) .links>a,nav.compact .navp:not(:hover) .dd>a{gap:0;padding:9px 11px}
+nav.compact .navp:not(:hover) .btn{gap:0;padding:0 11px}
+nav.compact .navp:not(:hover) .vbadge{display:none}
+nav.top .btn .ic{width:16px;height:16px}
+@media(max-width:900px){nav.compact .navp:not(:hover){max-width:none}.lbl{max-width:none!important;opacity:1!important}.links>a,.dd>a{gap:10px}}
