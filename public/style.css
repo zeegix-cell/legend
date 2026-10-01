@@ -292,3 +292,101 @@ nav.compact .navp:not(:hover){max-width:600px}
 .dacc[open] summary{color:var(--a)}.dacc[open] summary::after{transform:rotate(180deg);color:var(--a)}
 .dacc>*:not(summary){animation:pg .25s both}
 .dacc[open]>.fld:last-child,.dacc[open]>.grid2:last-child{margin-bottom:16px}
+
+/* ================= TELEPHONE ================= */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{-webkit-tap-highlight-color:transparent;overflow-x:hidden}
+.mob{display:none}
+@media(max-width:900px){
+ .wrap{padding:0 16px}
+ /* barre du haut : logo + recherche + "+" + compte + burger (tout tient sur 360 px) */
+ nav.top{padding:0 8px;top:6px}
+ .navp{height:54px;margin-top:6px;padding:0 8px 0 12px;gap:6px}
+ .logo{margin-right:0}
+ .nright{gap:6px;margin-left:auto}
+ .nright .lbl,.nright .kbd{display:none!important}
+ #sbtn{width:38px;padding:0;justify-content:center}
+ #auth{gap:6px}
+ #auth .btn.ghost,#auth .vbadge{display:none}
+ #auth a.btn:not(.ghost){width:38px;padding:0}
+ .avatar{width:34px;height:34px}
+ .btn.plus{width:38px}
+ .burger{width:38px;height:38px;display:grid;place-items:center;padding:0}
+ /* menu burger */
+ .links{max-height:calc(100vh - 86px);overflow:auto;top:62px;gap:2px}
+ .links>a,.dd>a{padding:13px 12px;font-size:.95rem}
+ .menu a{padding:11px 10px}
+ .links .mob{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding-top:8px;border-top:1px solid var(--line)}
+ .mob a,.mob button{display:flex;align-items:center;padding:13px 12px;border-radius:10px;background:none;border:0;color:var(--mut);text-align:left;font-size:.95rem;cursor:pointer;width:100%}
+ .mob a:hover,.mob button:hover{background:var(--s3);color:var(--txt)}
+ /* champs et boutons plus faciles a toucher (16px = pas de zoom automatique sur iPhone) */
+ input,select,textarea,.selb{font-size:16px}
+ .selb{height:46px}
+ input,select{min-height:44px}
+ .btn{height:44px}.btn.sm{height:38px}.btn.plus{height:38px}
+ .searchbox{height:52px}
+ /* accueil */
+ .hero{padding:44px 0 30px}.big{font-size:clamp(2.2rem,11vw,3rem)}.lead{font-size:.98rem}
+ .cta .btn{flex:1 1 140px}
+ .stats3{gap:8px;margin:30px 0 44px}.stat{padding:16px}.stat b{font-size:1.6rem}
+ .space{margin-bottom:44px}
+ .tiles{grid-template-columns:1fr 1fr;gap:8px}
+ .sec h2{font-size:1.25rem}
+ .hscroll{grid-auto-columns:78%;margin:0 -16px;padding:6px 16px 16px;scroll-padding:0 16px}
+ .grid{grid-template-columns:1fr;gap:14px}
+ .bento{gap:10px;margin-bottom:60px}.bx{padding:22px;min-height:0}
+ /* catalogue : categories en rangees defilantes au lieu d'une longue colonne */
+ .layout{gap:16px;margin-bottom:60px}
+ .side{padding:8px;border-radius:14px}
+ .sg .sgb{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none}.sgb::-webkit-scrollbar{display:none}
+ .sg>.cl{display:inline-flex}
+ .cl{white-space:nowrap;gap:8px;border:1px solid var(--line);border-radius:99px;padding:8px 14px;flex:none}
+ .cl.on{box-shadow:none;border-color:var(--a)}
+ .sg.shut .sgb{display:none}
+ .bar select,.bar .sel{width:100%}
+ /* fiche */
+ .crumb{margin:22px 0 14px}
+ .prod{gap:20px;margin-bottom:60px}
+ .gal img{width:70px;height:46px}
+ .info .panel,.panel{padding:18px}
+ /* publication */
+ .up{padding:26px 16px 70px}
+ .upgrid{margin-top:18px}
+ .steps{flex-direction:row;gap:6px;padding:8px;overflow-x:auto}
+ .step{flex:1 0 auto;padding:6px 10px}
+ .form{padding:18px}
+ .cgrid{grid-template-columns:1fr 1fr}
+ .nav2 .btn{min-width:110px}
+ /* classement */
+ .rk-tabs{display:flex;width:100%}.rk-tab{flex:1;padding:9px 6px;font-size:.82rem}
+ .wchip{width:100%}
+ .rrow{gap:10px;padding:12px 14px}
+ /* outils */
+ .ls{gap:14px}.lsbar{padding:14px}
+ .lsbar>div:last-child{width:100%}.lsbar .btn{flex:1}
+ .tplgrid{grid-template-columns:1fr 1fr}
+ /* palette de recherche */
+ .pal{padding-top:8vh}.palb input{height:52px;font-size:16px}
+ /* admin */
+ .crow{flex-wrap:wrap}.crow input[type=text]{flex:1 1 100%}.crow .sel{width:100%!important}
+ .ghead{flex-wrap:wrap}.ghead input{max-width:none;flex:1 1 100%}
+ .row{padding:12px}
+ .tabs{display:flex;width:100%}.tab{flex:1;padding:9px 8px;font-size:.82rem}
+ footer .wrap{flex-direction:column;gap:8px}
+}
+@media(max-width:380px){
+ .logo .lbl{display:none}
+}
+/* l'effet 3D des cartes n'a de sens qu'avec une souris */
+@media(hover:none){.card{transform:none!important}.card:hover{box-shadow:none;border-color:var(--line)}.card:hover .th::before{transform:none}.card:hover .cb h3{color:inherit}}
+@media(max-width:900px){
+ .stats3{grid-template-columns:repeat(3,1fr);gap:8px}
+ .stat{padding:14px 12px}.stat b{font-size:1.5rem}.stat span{font-size:.72rem;line-height:1.2;display:block}
+}
+@media(max-width:900px){.links{background:#0e0e11;box-shadow:0 24px 60px -12px #000}}
+@media(max-width:900px){.tabs{flex-wrap:nowrap}.tab{padding:9px 2px;font-size:.76rem;min-width:0}}
+@media(max-width:900px){
+ .steps{overflow:visible;justify-content:space-between}
+ .step:not(.on)>div:last-child{display:none}
+ .step.on{flex:1 1 auto}.step.on b{display:block;font-size:.84rem}
+}
