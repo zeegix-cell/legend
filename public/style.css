@@ -278,3 +278,17 @@ nav.top .lbl,nav.top .car{max-width:var(--w,150px)}
 
 /* pastille reduite : assez large pour le compte admin (icones + avatar + deconnexion) */
 nav.compact .navp:not(:hover){max-width:600px}
+
+/* --- createur de banniere --- */
+.tplgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:4px 0 16px}
+.tpl{position:relative;display:flex;flex-direction:column;gap:6px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--s2);cursor:pointer;text-align:left;font-size:.8rem;color:var(--mut);transition:.15s}
+.tpl canvas{width:100%;height:auto;border-radius:8px;display:block}
+.tpl:hover{border-color:var(--line2);color:var(--txt)}.tpl.on{border-color:var(--a);color:var(--txt);box-shadow:0 0 0 1px var(--a)}
+.tpl .lock{top:12px;right:12px}
+.dacc{border-bottom:1px solid var(--line)}.dacc:last-child{border:0}
+.dacc summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:16px 2px;font-weight:600}
+.dacc summary::-webkit-details-marker{display:none}
+.dacc summary::after{content:"▾";font-size:.7rem;color:var(--dim);transition:transform .25s}
+.dacc[open] summary{color:var(--a)}.dacc[open] summary::after{transform:rotate(180deg);color:var(--a)}
+.dacc>*:not(summary){animation:pg .25s both}
+.dacc[open]>.fld:last-child,.dacc[open]>.grid2:last-child{margin-bottom:16px}
