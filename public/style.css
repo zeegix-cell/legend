@@ -263,3 +263,18 @@ nav.compact .navp:not(:hover){transition:max-width .9s cubic-bezier(.22,.8,.24,1
 nav.compact .navp:not(:hover) .lbl,nav.compact .navp:not(:hover) .car{max-width:0;opacity:0;display:inline-block;transition:max-width .55s cubic-bezier(.22,.8,.24,1),opacity .3s ease}
 nav.compact .navp:not(:hover) .links>a,nav.compact .navp:not(:hover) .dd>a,nav.compact .navp:not(:hover) .btn,nav.compact .navp:not(:hover) .logo{transition:gap .55s cubic-bezier(.22,.8,.24,1),padding .55s cubic-bezier(.22,.8,.24,1),margin .55s cubic-bezier(.22,.8,.24,1),background .15s,color .15s,border-color .15s,transform .15s}
 @media(max-width:900px){.navp,nav.top .lbl,nav.top .car{transition:none}}
+
+/* --- barre du haut v3 : le contenu tient toujours dans la barre --- */
+#sbtn .lbl:not(.kbd){display:none}      /* "Rechercher" : l'icone + Ctrl K suffisent */
+#lo .lbl{display:none}                  /* "Quitter" : icone seule */
+nav.top .lbl,nav.top .car{max-width:var(--w,150px)}
+@media(min-width:901px) and (max-width:1240px){
+  #sbtn .kbd,.nright a[href="/admin"] .lbl{display:none}
+}
+@media(min-width:901px) and (max-width:1100px){
+  nav.top .links .lbl,nav.top .logo .lbl,nav.top .links .car{display:none}
+  nav.top .links>a,nav.top .dd>a{gap:0;padding:9px 12px}
+}
+
+/* pastille reduite : assez large pour le compte admin (icones + avatar + deconnexion) */
+nav.compact .navp:not(:hover){max-width:600px}

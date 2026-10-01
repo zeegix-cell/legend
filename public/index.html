@@ -53,8 +53,12 @@ async function boot(){
   const lo=$('#lo');if(lo)lo.onclick=async()=>{await fetch('/auth/logout',{method:'POST'});location.reload()};
   $('#mres').innerHTML=`<a href="#/ressources/all/top">★ Populaires</a><a href="#/ressources/all/new">＋ Nouveautés</a>`+CAT.groups.map(g=>`<div class="ml">${esc(g.name)}</div>${g.categories.map(c=>`<a class="${c.vipOnly?'v':''}" href="#/ressources/${encodeURIComponent(c.id)}"><span>${c.vipOnly?'★ ':''}${esc(c.name)}</span></a>`).join('')}`).join('');
   $$('.dcl').forEach(a=>a.href=DISCORD_URL);
+  measureNav();
   route();
 }
+// mesure la largeur reelle de chaque texte de la barre : l'animation suit alors exactement la place necessaire
+function measureNav(){$$('nav.top .lbl, nav.top .car').forEach(e=>{const w=e.scrollWidth;if(w)e.style.setProperty('--w',(w+2)+'px')})}
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(measureNav);
 const loadRes=async()=>RES=await j('/api/resources').catch(()=>[]);
 const cover=r=>r.images?.[0]?`style="background-image:url('/img/${esc(r.images[0])}')"`:'';
 const card=(r,i=0)=>`<article class="card" data-id="${r.id}" style="animation-delay:${Math.min(i,12)*35}ms"><div class="th" ${cover(r)}>${r.images?.[0]?'':esc((r.categoryName||'?')[0])}<span class="chip">${esc(r.categoryName)}</span>${r.vipOnly?'<span class="lock">★ VIP</span>':''}</div>
