@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const createStore = require('./store');
+const startBot = require('./bot');
 
 const {
   PORT = 3000, BASE_URL = 'http://localhost:3000', SESSION_SECRET,
@@ -64,8 +65,19 @@ createStore(DATA).then(store => {
   // ---------- VIP ----------
   const vipActive = v => !!v && (v.until === null || v.until > Date.now());
   const vipOf = async uid => { const v = uid ? await store.vip(uid) : null; return { active: vipActive(v), until: v ? v.until : null }; };
-  setInterval(async () => {            // retire automatiquement les VIP expires
-    try { for (const v of await store.vips()) if (v.until !== null && v.until <= Date.now()) await store.delVip(v.userId); } catch (e) { console.error(e); }
+  let bot = null;                                                  // demarre en fin de fichier
+  const B = (fn, ...a) => { try { if (bot) bot[fn](...a); } catch (e) { console.error('[bot]', e.message); } };
+  const grantVip = async (uid, days, by) => {                      // utilise par le panel admin ET par la commande Discord /vip
+    const cur = await store.vip(uid), now = Date.now();
+    let until;
+    if (days === null || (cur && cur.until === null && vipActive(cur))) until = null;                       // a vie
+    else until = Math.max(now, cur && vipActive(cur) ? cur.until : 0) + days * 864e5;                       // prolonge si deja VIP
+    await store.setVip({ userId: uid, until, grantedBy: by, grantedAt: now });
+    B('vipChanged', uid, 'grant', until, by); return until;
+  };
+  const revokeVip = async (uid, by) => { await store.delVip(uid); B('vipChanged', uid, 'remove', null, by); };
+  setInterval(async () => {            // retire automatiquement les VIP expires (et leur role Discord)
+    try { for (const v of await store.vips()) if (v.until !== null && v.until <= Date.now()) { await store.delVip(v.userId); B('vipChanged', v.userId, 'expired', null, null); } } catch (e) { console.error(e); }
   }, 10 * 60 * 1000).unref();
 
   // ---------- Discord OAuth2 ----------
@@ -174,6 +186,7 @@ createStore(DATA).then(store => {
           status: isAdmin(req) ? 'approved' : 'pending', views: 0, downloads: 0, createdAt: now
         };
         await store.addResource(item);
+        B('resourceAdded', item);
         hits.set(uid, [...recent, now]);
         res.json({ id: item.id, status: item.status });
       } catch (e) { console.error(e); cleanup(); res.status(500).json({ error: 'Erreur serveur.' }); }
@@ -194,6 +207,7 @@ createStore(DATA).then(store => {
     const reason = String(req.body?.reason || '').slice(0, 500);
     if (!reason) return res.status(400).json({ error: 'raison requise' });
     await store.addReport({ id: crypto.randomUUID(), resourceId: req.params.id, reason, by: req.session.user.name, at: Date.now() });
+    B('reportAdded', { reason, by: req.session.user.name }, await store.resource(req.params.id));
     res.json({ ok: true });
   }));
 
@@ -228,7 +242,9 @@ createStore(DATA).then(store => {
   app.post('/api/admin/resources/:id/status', requireAdmin, ah(async (req, res) => {
     const s = req.body?.status;
     if (!['approved', 'rejected', 'pending'].includes(s)) return res.status(400).json({ error: 'status' });
+    const before = await store.resource(req.params.id);
     if (!(await store.setStatus(req.params.id, s))) return res.status(404).json({ error: 'not found' });
+    if (s === 'approved' && before && before.status !== 'approved') B('resourceApproved', { ...before, status: 'approved' });
     res.json({ ok: true });
   }));
   app.delete('/api/admin/resources/:id', requireAdmin, ah(async (req, res) => {
@@ -309,14 +325,17 @@ createStore(DATA).then(store => {
     const uid = String(req.body?.userId || '').trim(), days = req.body?.days;
     if (!/^\d{15,25}$/.test(uid)) return res.status(400).json({ error: 'ID Discord invalide (15 a 25 chiffres).' });
     if (days !== null && !(Number.isInteger(days) && days >= 1 && days <= 3650)) return res.status(400).json({ error: 'duree invalide' });
-    const cur = await store.vip(uid), now = Date.now();
-    let until;
-    if (days === null || (cur && cur.until === null && vipActive(cur))) until = null;                       // a vie
-    else until = Math.max(now, cur && vipActive(cur) ? cur.until : 0) + days * DAY;                          // prolonge si deja VIP
-    await store.setVip({ userId: uid, until, grantedBy: req.session.user.name, grantedAt: now });
+    const until = await grantVip(uid, days, req.session.user.name);
     res.json({ ok: true, until });
   }));
-  app.delete('/api/admin/vip/:uid', requireAdmin, ah(async (req, res) => { await store.delVip(req.params.uid); res.json({ ok: true }); }));
+  app.delete('/api/admin/vip/:uid', requireAdmin, ah(async (req, res) => { await revokeVip(req.params.uid, req.session.user.name); res.json({ ok: true }); }));
+
+  // ---------- Bot Discord (meme processus) ----------
+  bot = startBot({
+    store, ranking, admins, baseUrl: BASE_URL, grantVip, revokeVip,
+    describe: async r => { const c = catOf(await store.categories(), r); return { categoryName: c ? c.name : String(r.category), vipOnly: !!(c && c.vipOnly) }; }
+  });
+  app.get('/api/admin/bot', requireAdmin, ah(async (req, res) => res.json(await bot.status())));
 
   app.get('/admin', (req, res) => isAdmin(req) ? res.sendFile(path.join(__dirname, 'public', 'admin.html')) : res.redirect('/'));
   app.use(express.static(path.join(__dirname, 'public'), { index: 'index.html' }));

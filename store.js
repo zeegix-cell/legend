@@ -61,7 +61,10 @@ function jsonStore(dir) {
     async sessGet(sid) { const s = sess[sid]; return s && s.exp > Date.now() ? s.data : null; },
     async sessSet(sid, data, exp) { sess[sid] = { data, exp }; flush(); },
     async sessTouch(sid, exp) { if (sess[sid]) { sess[sid].exp = exp; flush(); } },
-    async sessDel(sid) { delete sess[sid]; flush(); }
+    async sessDel(sid) { delete sess[sid]; flush(); },
+    // reglages cles/valeurs (ex : salons et roles Discord crees par le bot)
+    async setting(k) { return rd('settings', {})[k] ?? null; },
+    async setSetting(k, v) { const s = rd('settings', {}); s[k] = v; wr('settings', s); }
   };
 }
 
@@ -93,6 +96,7 @@ function mysqlStore(cfg) {
       await q(`CREATE TABLE IF NOT EXISTS vips (userId VARCHAR(32) PRIMARY KEY, until BIGINT NULL, grantedBy VARCHAR(100), grantedAt BIGINT) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(32) PRIMARY KEY, name VARCHAR(100), avatar VARCHAR(255), lastLogin BIGINT) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS sessions (sid VARCHAR(128) PRIMARY KEY, data MEDIUMTEXT, exp BIGINT, INDEX (exp)) ${T}`);
+      await q(`CREATE TABLE IF NOT EXISTS settings (k VARCHAR(60) PRIMARY KEY, v MEDIUMTEXT) ${T}`);
     },
     async resources() { const [rows] = await pool.query('SELECT * FROM resources ORDER BY createdAt DESC'); return rows.map(toR); },
     async resource(id) { const [rows] = await pool.query('SELECT * FROM resources WHERE id=?', [id]); return rows[0] ? toR(rows[0]) : null; },
@@ -140,7 +144,9 @@ function mysqlStore(cfg) {
     async sessGet(sid) { const [r] = await pool.query('SELECT data FROM sessions WHERE sid=? AND exp>?', [sid, Date.now()]); return r[0] ? JSON.parse(r[0].data) : null; },
     async sessSet(sid, data, exp) { await pool.query('INSERT INTO sessions (sid,data,exp) VALUES (?,?,?) ON DUPLICATE KEY UPDATE data=VALUES(data), exp=VALUES(exp)', [sid, JSON.stringify(data), exp]); },
     async sessTouch(sid, exp) { await pool.query('UPDATE sessions SET exp=? WHERE sid=?', [exp, sid]); },
-    async sessDel(sid) { await pool.query('DELETE FROM sessions WHERE sid=?', [sid]); }
+    async sessDel(sid) { await pool.query('DELETE FROM sessions WHERE sid=?', [sid]); },
+    async setting(k) { const [r] = await pool.query('SELECT v FROM settings WHERE k=?', [k]); return r[0] ? JSON.parse(r[0].v) : null; },
+    async setSetting(k, v) { await pool.query('INSERT INTO settings (k,v) VALUES (?,?) ON DUPLICATE KEY UPDATE v=VALUES(v)', [k, JSON.stringify(v)]); }
   };
 }
 
