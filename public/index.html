@@ -19,7 +19,7 @@
       <div class="menu"><a href="#/regles">Règles &amp; signalement</a><a class="dcl" target="_blank" rel="noopener">Discord</a></div></div>
   </div>
   <div class="nright">
-    <button class="btn ghost sm" id="sbtn" title="Rechercher (Ctrl K)"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span class="lbl">Rechercher</span><span class="kbd lbl">Ctrl K</span></button>
+    <button class="btn ghost sm" id="sbtn" title="Rechercher (Ctrl K)"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span class="lbl">Rechercher</span></button>
     <a class="btn sm plus" href="#/publier" title="Publier une ressource"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></a>
     <span id="auth" style="display:flex;gap:8px;align-items:center"></span>
     <button class="burger" id="bg" aria-label="Menu">☰</button>
@@ -49,7 +49,7 @@ const canVip=()=>ME.admin||ME.vip.active;
 async function boot(){
   ME=await j('/api/me').catch(()=>ME); CAT=await j('/api/catalog').catch(()=>CAT);
   $('#auth').innerHTML=ME.user
-   ?`${ME.admin?`<a class="btn ghost sm" href="/admin" title="Admin"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/></svg><span class="lbl">Admin</span></a>`:''}${ME.vip.active?'<span class="vbadge">VIP</span>':''}${ME.user.avatar?`<img class="avatar" src="${esc(ME.user.avatar)}" alt="">`:''}<button class="btn ghost sm" id="lo" title="Déconnexion"><svg class="ic" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/></svg><span class="lbl">Quitter</span></button>`
+   ?`${ME.admin?`<a class="btn ghost sm" href="/admin" title="Admin"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/></svg><span class="lbl">Admin</span></a>`:''}<span class="avw ${ME.vip.active?'vip':''}" title="${ME.vip.active?'Membre VIP':esc(ME.user.name)}">${ME.user.avatar?`<img class="avatar" src="${esc(ME.user.avatar)}" alt="">`:`<span class="avatar ph">${esc((ME.user.name||'?')[0].toUpperCase())}</span>`}${ME.vip.active?'<i class="vstar">★</i>':''}</span><button class="btn ghost sm" id="lo" title="Déconnexion"><svg class="ic" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/></svg><span class="lbl">Quitter</span></button>`
    :`<a class="btn sm" href="/auth/login" title="Connexion"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span class="lbl">Connexion</span></a>`;
   const logout=async()=>{await fetch('/auth/logout',{method:'POST'});location.reload()};
   const lo=$('#lo');if(lo)lo.onclick=logout;
@@ -59,12 +59,15 @@ async function boot(){
   $('#links').appendChild(mob);const l2=$('#lo2');if(l2)l2.onclick=logout;
   $('#mres').innerHTML=`<a href="#/ressources/all/top">★ Populaires</a><a href="#/ressources/all/new">＋ Nouveautés</a>`+CAT.groups.map(g=>`<div class="ml">${esc(g.name)}</div>${g.categories.map(c=>`<a class="${c.vipOnly?'v':''}" href="#/ressources/${encodeURIComponent(c.id)}"><span>${c.vipOnly?'★ ':''}${esc(c.name)}</span></a>`).join('')}`).join('');
   $$('.dcl').forEach(a=>a.href=DISCORD_URL);
-  measureNav();
+  measureNav();fitNav();
   route();
 }
 // mesure la largeur reelle de chaque texte de la barre : l'animation suit alors exactement la place necessaire
 function measureNav(){$$('nav.top .lbl, nav.top .car').forEach(e=>{const w=e.scrollWidth;if(w)e.style.setProperty('--w',(w+2)+'px')})}
-if(document.fonts&&document.fonts.ready)document.fonts.ready.then(measureNav);
+// si le contenu de la barre depasse (compte admin + VIP + pseudo long...), les textes passent en icones automatiquement
+function fitNav(){const nav=$('nav.top'),p=$('.navp');if(!nav||!p||nav.classList.contains('compact'))return;nav.classList.remove('tight');if(innerWidth>900&&p.scrollWidth>p.clientWidth+1)nav.classList.add('tight')}
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{measureNav();fitNav()});
+addEventListener('resize',fitNav);
 const loadRes=async()=>RES=await j('/api/resources').catch(()=>[]);
 const cover=r=>r.images?.[0]?`style="background-image:url('/img/${esc(r.images[0])}')"`:'';
 const card=(r,i=0)=>`<article class="card" data-id="${r.id}" style="animation-delay:${Math.min(i,12)*35}ms"><div class="th" ${cover(r)}>${r.images?.[0]?'':esc((r.categoryName||'?')[0])}<span class="chip">${esc(r.categoryName)}</span>${r.vipOnly?'<span class="lock">★ VIP</span>':''}</div>
@@ -253,7 +256,7 @@ function route(){
 }
 addEventListener('hashchange',route);
 // la barre du haut se reduit en icones quand on descend (avec une marge pour eviter le clignotement)
-(()=>{const nav=$('nav.top');let c=false;const on=()=>{const y=scrollY;if(innerWidth<=900){c=false}else if(!c&&y>70)c=true;else if(c&&y<30)c=false;nav.classList.toggle('compact',c)};addEventListener('scroll',on,{passive:true});addEventListener('resize',on)})();
+(()=>{const nav=$('nav.top');let c=false;const on=()=>{const y=scrollY;if(innerWidth<=900){c=false}else if(!c&&y>70)c=true;else if(c&&y<30)c=false;const was=nav.classList.contains('compact');nav.classList.toggle('compact',c);if(was&&!c)fitNav()};addEventListener('scroll',on,{passive:true});addEventListener('resize',on)})();
 $('#bg').onclick=()=>$('#links').classList.toggle('open');
 $$('.dd > a').forEach(a=>a.addEventListener('click',e=>{if(innerWidth<=900&&!a.parentElement.classList.contains('open')){e.preventDefault();a.parentElement.classList.add('open')}}));
 boot();

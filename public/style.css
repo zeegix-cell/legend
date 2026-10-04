@@ -390,3 +390,13 @@ body{-webkit-tap-highlight-color:transparent;overflow-x:hidden}
  .step:not(.on)>div:last-child{display:none}
  .step.on{flex:1 1 auto}.step.on b{display:block;font-size:.84rem}
 }
+
+/* --- barre : avatar VIP (remplace le badge, qui prenait trop de place) --- */
+.avw{position:relative;display:inline-block;flex:none}
+.avatar.ph{display:grid;place-items:center;background:var(--s3);color:var(--mut);font-weight:700;font-size:.85rem}
+.avw.vip .avatar{border-color:var(--vip);box-shadow:0 0 0 2px rgba(245,185,66,.28)}
+.vstar{position:absolute;right:-4px;bottom:-4px;width:15px;height:15px;border-radius:50%;background:var(--vip);color:#1a1200;font-size:.55rem;display:grid;place-items:center;font-style:normal;line-height:1;border:2px solid var(--bg)}
+/* --- barre : adaptation automatique quand le contenu ne tient pas --- */
+nav.tight .navp .links .lbl,nav.tight .navp .links .car,nav.tight .navp .nright .lbl,nav.tight .navp .logo .lbl{display:none}
+nav.tight .navp .links>a,nav.tight .navp .dd>a{gap:0;padding:9px 12px}
+nav.tight .navp .btn{gap:0;padding:0 11px}
