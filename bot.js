@@ -28,7 +28,7 @@ module.exports = function startBot(ctx) {
   const { store, ranking, admins, baseUrl, grantVip, revokeVip, describe, categories, readImage, badgeCatalogue, memberBadges, evaluateUser, awardBadge, statsOf } = ctx;
   const { DISCORD_BOT_TOKEN: token, DISCORD_GUILD_ID: guildId, DISCORD_CLIENT_ID: clientId } = process.env;
   const noop = async () => {};
-  const off = { enabled: false, resourceAdded: noop, resourceApproved: noop, reportAdded: noop, vipChanged: noop, badgeAwarded: noop, badgesChanged: noop, status: async () => ({ enabled: false }) };
+  const off = { enabled: false, resourceAdded: noop, resourceApproved: noop, reportAdded: noop, vipChanged: noop, badgeAwarded: noop, badgesChanged: noop, orderPaid: noop, status: async () => ({ enabled: false }) };
   if (!token || !guildId) { console.log('Bot Discord desactive (DISCORD_BOT_TOKEN et DISCORD_GUILD_ID non definis).'); return off; }
 
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -278,6 +278,12 @@ module.exports = function startBot(ctx) {
     await store.setSetting('patchVersion', notes[0].version);
     return todo.length;
   });
+  const orderPaid = guard('paiement', async o => {   // journal des achats de VIP (salon staff)
+    await send('logs', { embeds: [new EmbedBuilder().setColor(GREEN).setTitle('💰 Paiement reçu')
+      .setDescription(`<@${o.userId}> (${cut(o.userName, 40)}) a acheté **VIP · ${cut(o.label, 30)}**\nMontant : **${Number(o.amount).toFixed(2)} ${String(o.currency).toUpperCase()}**`)
+      .setFooter({ text: `Commande ${String(o.id).slice(0, 8)} · ${o.provider}` }).setTimestamp()], allowedMentions: { parse: [] } });
+  });
+
   /* ---------------- badges ---------------- */
   const hexInt = c => parseInt(String(c || '#a1a1aa').slice(1), 16) || 0xa1a1aa;
   async function postBadgeCatalogue() {   // un message de reference (supprime puis republie), les annonces restent en dessous
@@ -568,7 +574,7 @@ module.exports = function startBot(ctx) {
 
   const invite = clientId ? `https://discord.com/oauth2/authorize?client_id=${clientId}&scope=bot%20applications.commands&permissions=8` : null;
   return {
-    enabled: true, resourceAdded, resourceApproved, reportAdded, vipChanged, badgeAwarded, badgesChanged,
+    enabled: true, resourceAdded, resourceApproved, reportAdded, vipChanged, badgeAwarded, badgesChanged, orderPaid,
     status: async () => ({ enabled: true, ready, tag: client.user && client.user.tag, guild: ready ? (await getGuild()).name : null, setupDone: !!S.channels['cat:ressources'], channels: S.channels, roles: S.roles, invite })
   };
 };

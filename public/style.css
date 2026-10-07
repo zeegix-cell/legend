@@ -416,3 +416,11 @@ nav.tight .navp .btn{gap:0;padding:0 11px}
 .pavatar.ph{display:grid;place-items:center;background:var(--s3);font-size:2.4rem;font-weight:700;color:var(--mut)}
 .ptags{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
 @media(max-width:900px){.phead{margin-top:30px;gap:16px}.pavatar{width:72px;height:72px}.bgrid{grid-template-columns:1fr}}
+
+/* --- achat du VIP --- */
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.plan{display:flex;flex-direction:column;gap:6px;padding:20px;border:1px solid rgba(245,185,66,.3);border-radius:16px;background:var(--s1);text-align:center;transition:transform .2s,border-color .2s}
+.plan:hover{transform:translateY(-3px);border-color:var(--vip)}
+.plan h3{font-size:1.05rem}.pprice{font-size:1.9rem;font-weight:700;letter-spacing:-.03em;color:var(--vip)}.plan small{color:var(--dim);margin-bottom:8px}
+.orow{display:grid;grid-template-columns:1fr 150px 90px 110px;gap:12px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line);font-size:.9rem}.orow:last-child{border:0}
+@media(max-width:700px){.orow{grid-template-columns:1fr auto;row-gap:2px}}

@@ -67,6 +67,12 @@ function jsonStore(dir) {
     async allUserBadges() { return rd('user_badges'); },
     async grantBadge(g) { const l = rd('user_badges'); if (l.some(x => x.userId === g.userId && x.badgeId === g.badgeId)) return false; l.push(g); wr('user_badges', l); return true; },
     async revokeBadge(uid, bid) { const l = rd('user_badges'), n = l.length; wr('user_badges', l.filter(x => !(x.userId === uid && x.badgeId === bid))); return l.length !== n; },
+    // commandes (paiements VIP)
+    async addOrder(o) { const l = rd('orders'); l.unshift(o); wr('orders', l); },
+    async order(id) { return rd('orders').find(o => o.id === id) || null; },
+    async updateOrder(id, p) { const l = rd('orders'), o = l.find(x => x.id === id); if (!o) return false; Object.assign(o, p); wr('orders', l); return true; },
+    async claimPaid(id, ref) { const l = rd('orders'), o = l.find(x => x.id === id); if (!o || o.status === 'paid') return false; Object.assign(o, { status: 'paid', paidAt: Date.now(), providerRef: ref || o.providerRef }); wr('orders', l); return true; },   // atomique : une commande n'est creditee qu'une fois
+    async orders(limit = 100, uid) { return rd('orders').filter(o => !uid || o.userId === uid).slice(0, limit); },
     // sessions (connexion persistante)
     async sessGet(sid) { const s = sess[sid]; return s && s.exp > Date.now() ? s.data : null; },
     async sessSet(sid, data, exp) { sess[sid] = { data, exp }; flush(); },
@@ -88,6 +94,7 @@ function mysqlStore(cfg) {
   const T = 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4';
   const toC = c => ({ ...c, vipOnly: !!c.vipOnly });
   const num = v => (v === null || v === undefined ? null : Number(v));
+  const toO = o => ({ ...o, days: num(o.days), amount: Number(o.amount), createdAt: num(o.createdAt), paidAt: num(o.paidAt) });
   return {
     kind: 'mysql',
     async init() {
@@ -110,6 +117,7 @@ function mysqlStore(cfg) {
       await q(`CREATE TABLE IF NOT EXISTS badges (id VARCHAR(40) PRIMARY KEY, name VARCHAR(40) NOT NULL, emoji VARCHAR(16), description VARCHAR(200), color VARCHAR(7), position INT NOT NULL DEFAULT 0) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS user_badges (userId VARCHAR(32) NOT NULL, badgeId VARCHAR(40) NOT NULL, at BIGINT, grantedBy VARCHAR(100), auto TINYINT(1) NOT NULL DEFAULT 0, PRIMARY KEY (userId, badgeId), INDEX (badgeId)) ${T}`);
       await q('ALTER TABLE users ADD COLUMN firstSeen BIGINT NULL').catch(() => {});   // deja presente apres le 1er demarrage
+      await q(`CREATE TABLE IF NOT EXISTS orders (id VARCHAR(36) PRIMARY KEY, userId VARCHAR(32) NOT NULL, userName VARCHAR(100), planId VARCHAR(20), label VARCHAR(40), days INT NULL, amount DECIMAL(10,2) NOT NULL, currency VARCHAR(8), provider VARCHAR(20), providerRef VARCHAR(80), status VARCHAR(12) NOT NULL, createdAt BIGINT NOT NULL, paidAt BIGINT NULL, INDEX (userId), INDEX (createdAt)) ${T}`);
     },
     async resources() { const [rows] = await pool.query('SELECT * FROM resources ORDER BY createdAt DESC'); return rows.map(toR); },
     async resource(id) { const [rows] = await pool.query('SELECT * FROM resources WHERE id=?', [id]); return rows[0] ? toR(rows[0]) : null; },
@@ -163,6 +171,11 @@ function mysqlStore(cfg) {
     async allUserBadges() { const [r] = await pool.query('SELECT * FROM user_badges'); return r.map(x => ({ ...x, at: num(x.at), auto: !!x.auto })); },
     async grantBadge(g) { const [r] = await pool.query('INSERT IGNORE INTO user_badges (userId,badgeId,at,grantedBy,auto) VALUES (?,?,?,?,?)', [g.userId, g.badgeId, g.at, g.grantedBy, g.auto ? 1 : 0]); return r.affectedRows > 0; },
     async revokeBadge(uid, bid) { const [r] = await pool.query('DELETE FROM user_badges WHERE userId=? AND badgeId=?', [uid, bid]); return r.affectedRows > 0; },
+    async addOrder(o) { await pool.query('INSERT INTO orders (id,userId,userName,planId,label,days,amount,currency,provider,providerRef,status,createdAt,paidAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', [o.id, o.userId, o.userName, o.planId, o.label, o.days, o.amount, o.currency, o.provider, o.providerRef || null, o.status, o.createdAt, o.paidAt || null]); },
+    async order(id) { const [r] = await pool.query('SELECT * FROM orders WHERE id=?', [id]); return r[0] ? toO(r[0]) : null; },
+    async updateOrder(id, p) { const k = Object.keys(p); if (!k.length) return true; const [r] = await pool.query(`UPDATE orders SET ${k.map(x => '`' + x + '`=?').join(',')} WHERE id=?`, [...k.map(x => p[x]), id]); return r.affectedRows > 0; },
+    async claimPaid(id, ref) { const [r] = await pool.query("UPDATE orders SET status='paid', paidAt=?, providerRef=COALESCE(?, providerRef) WHERE id=? AND status<>'paid'", [Date.now(), ref || null, id]); return r.affectedRows > 0; },   // atomique
+    async orders(limit = 100, uid) { const [r] = uid ? await pool.query('SELECT * FROM orders WHERE userId=? ORDER BY createdAt DESC LIMIT ?', [uid, limit]) : await pool.query('SELECT * FROM orders ORDER BY createdAt DESC LIMIT ?', [limit]); return r.map(toO); },
     async sessGet(sid) { const [r] = await pool.query('SELECT data FROM sessions WHERE sid=? AND exp>?', [sid, Date.now()]); return r[0] ? JSON.parse(r[0].data) : null; },
     async sessSet(sid, data, exp) { await pool.query('INSERT INTO sessions (sid,data,exp) VALUES (?,?,?) ON DUPLICATE KEY UPDATE data=VALUES(data), exp=VALUES(exp)', [sid, JSON.stringify(data), exp]); },
     async sessTouch(sid, exp) { await pool.query('UPDATE sessions SET exp=? WHERE sid=?', [exp, sid]); },

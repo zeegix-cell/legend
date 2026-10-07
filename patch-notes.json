@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.9.0",
+    "date": "2026-10-07",
+    "title": "Achète ton VIP en crypto",
+    "new": [
+      "**Achat du VIP en ligne** : choisis une formule (30 jours, 90 jours, 1 an ou à vie) et paie en cryptomonnaie",
+      "Le VIP s'active **automatiquement** dès que le paiement est confirmé, sans rien demander à personne",
+      "**Historique de tes commandes** sur la page VIP"
+    ],
+    "improved": [
+      "Paiement unique : aucun abonnement, aucun renouvellement caché",
+      "Si tu as déjà le VIP, la durée achetée s'ajoute à celle qui te reste"
+    ]
+  },
+  {
     "version": "1.8.1",
     "date": "2026-10-07",
     "title": "Serveur Discord entièrement configuré",

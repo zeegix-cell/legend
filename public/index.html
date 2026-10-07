@@ -213,14 +213,33 @@ async function ranking(period='week'){
 }
 
 /* ---------- VIP + règles ---------- */
-function vipPage(){
-  const v=ME.vip, status=!ME.user?`<a class="btn" href="/auth/login">Connexion Discord</a>`
+let vipTimer=0;
+async function vipPage(sub){
+  clearInterval(vipTimer);
+  const [pl,orders]=await Promise.all([j('/api/vip/plans').catch(()=>({plans:[],methods:{}})),ME.user?j('/api/vip/orders').catch(()=>[]):Promise.resolve([])]);
+  const v=ME.vip, buyable=pl.plans.length&&pl.methods.crypto, eur=n=>Number(n).toFixed(2).replace('.',',')+' €';
+  const status=!ME.user?`<a class="btn" href="/auth/login">Connexion Discord</a>`
     :v.active?`<div class="flash vip">★ Ton VIP est actif ${v.until===null?'<b>à vie</b>':`jusqu'au <b>${fdate(v.until)}</b>`}.</div>`
     :`<div class="flash">Tu n'as pas de VIP pour le moment.</div>`;
+  const banner=sub==='paid'?`<div class="flash ok" style="margin-bottom:16px">✅ Merci ! Ton paiement est en cours de vérification sur la blockchain : ton VIP s'active <b>automatiquement</b> dès qu'il est confirmé (quelques minutes).</div>`
+    :sub==='cancel'?`<div class="flash" style="margin-bottom:16px">Paiement annulé. Tu peux réessayer quand tu veux.</div>`:'';
+  const st={pending:'En attente',partial:'Incomplet',paid:'Payée',failed:'Échouée',expired:'Expirée',refunded:'Remboursée'};
   const vipCats=allCats().filter(c=>c.vipOnly);
-  $('#app').innerHTML=`<div class="up" style="max-width:760px"><div class="eb">Passe VIP</div><h1 class="t">Accès exclusif</h1>
-   <p class="mut" style="margin:10px 0 24px">Le VIP donne accès aux ressources marquées ★ : ${vipCats.length?vipCats.map(c=>`<b style="color:var(--vip)">${esc(c.name)}</b>`).join(', '):'catégories exclusives'}. Il est attribué par l'équipe pour une durée limitée ou à vie, et s'arrête automatiquement à la fin de la période.</p>
-   ${status}<div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap"><a class="btn vip" href="${DISCORD_URL}" target="_blank" rel="noopener">Demander le VIP sur Discord</a><a class="btn ghost" href="#/ressources">Parcourir</a></div></div>`;
+  $('#app').innerHTML=`<div class="up" style="max-width:820px"><div class="eb">Passe VIP</div><h1 class="t">Accès exclusif</h1>
+   <p class="mut" style="margin:10px 0 24px">Le VIP donne accès aux ressources marquées ★ : ${vipCats.length?vipCats.map(c=>`<b style="color:var(--vip)">${esc(c.name)}</b>`).join(', '):'catégories exclusives'}, au salon privé Discord et aux modèles premium des outils. Il s'arrête automatiquement à la fin de la période.</p>
+   ${banner}${status}
+   ${buyable?`<div class="gtitle" style="margin:30px 0 12px">Acheter le VIP</div>
+    <div class="plans">${pl.plans.map(p=>`<div class="plan"><h3>${esc(p.label)}</h3><div class="pprice">${eur(p.price)}</div><small>${p.days?'paiement unique':'accès permanent'}</small><button class="btn vip full" data-plan="${esc(p.id)}">Payer en crypto</button></div>`).join('')}</div>
+    <p class="dim" style="font-size:.8rem;margin-top:12px">Paiement en BTC, ETH, USDT, LTC… sur une page sécurisée. Paiement unique, sans renouvellement automatique. Le VIP est ajouté à ton compte (et à ton rôle Discord) automatiquement.</p>`
+    :`<div class="flash" style="margin-top:22px">Les achats en ligne ne sont pas encore ouverts. Demande le VIP à l'équipe sur Discord.</div><div style="margin-top:14px"><a class="btn vip" href="${DISCORD_URL}" target="_blank" rel="noopener">Demander le VIP sur Discord</a></div>`}
+   ${orders.length?`<div class="gtitle" style="margin:34px 0 10px">Mes commandes</div><div class="rlist">${orders.map(o=>`<div class="orow"><b>${esc(o.label)}</b><span class="mut">${fdate(o.createdAt)}</span><span>${eur(o.amount)}</span><span class="tag ${o.status==='paid'?'approved':(o.status==='pending'||o.status==='partial')?'pending':'rejected'}">${st[o.status]||esc(o.status)}</span></div>`).join('')}</div>`:''}
+   <div style="margin-top:26px"><a class="btn ghost" href="#/ressources">Parcourir les ressources</a></div></div>`;
+  $$('[data-plan]').forEach(b=>b.onclick=async()=>{
+    if(!ME.user){location.href='/auth/login';return}
+    b.disabled=true;
+    try{const r=await j('/api/vip/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({planId:b.dataset.plan,method:'crypto'})});location.href=r.url}
+    catch(e){b.disabled=false;alert(e.message)}});
+  if(sub==='paid'&&!v.active){let n=0;vipTimer=setInterval(async()=>{n++;try{ME=await j('/api/me')}catch{}if(ME.vip.active||n>60){clearInterval(vipTimer);if(ME.vip.active)vipPage()}},5000)}
 }
 /* ---------- badges + profils ---------- */
 const bcard=(b,extra)=>`<div class="bcard ${b.locked?'locked':''}" style="--c:${esc(b.color)}"><div class="bem">${esc(b.emoji)}</div><div><b>${esc(b.name)}</b><p>${esc(b.description)}</p><small>${extra||''}</small></div></div>`;
@@ -271,9 +290,9 @@ $('#sbtn').onclick=openPal;
 
 /* ---------- routeur ---------- */
 function route(){
-  const [,a,b,c]=(location.hash||'#/').split('/');scrollTo(0,0);
+  clearInterval(vipTimer);const [,a,b,c]=(location.hash||'#/').split('/');scrollTo(0,0);
   $$('#links a[data-r]').forEach(l=>l.classList.toggle('on',l.dataset.r===(a==='r'?'ressources':a||'home')));$('#links').classList.remove('open');
-  ({ressources:()=>list(decodeURIComponent(b||'all'),c||'new'),tools:()=>b==='loading-screen'?loadingScreen():b==='banner'?bannerTool():home(),classement:()=>ranking(),badges:badgesPage,membre:()=>profile(decodeURIComponent(b||'')),r:()=>detail(b),publier:publish,vip:vipPage,regles:rules}[a]||home)();
+  ({ressources:()=>list(decodeURIComponent(b||'all'),c||'new'),tools:()=>b==='loading-screen'?loadingScreen():b==='banner'?bannerTool():home(),classement:()=>ranking(),badges:badgesPage,membre:()=>profile(decodeURIComponent(b||'')),r:()=>detail(b),publier:publish,vip:()=>vipPage(b),regles:rules}[a]||home)();
 }
 addEventListener('hashchange',route);
 // la barre du haut se reduit en icones quand on descend (avec une marge pour eviter le clignotement)

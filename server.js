@@ -8,6 +8,7 @@ const path = require('path');
 const createStore = require('./store');
 const startBot = require('./bot');
 const badgeLib = require('./badges');
+const pay = require('./payments');
 
 const {
   PORT = 3000, BASE_URL = 'http://localhost:3000', SESSION_SECRET,
@@ -417,6 +418,74 @@ createStore(DATA).then(store => {
     res.json({ ok: true, granted: await awardBadge(uid, req.params.id, req.session.user.name, false) });
   }));
   app.delete('/api/admin/badges/:id/grant/:uid', requireAdmin, ah(async (req, res) => { await store.revokeBadge(req.params.uid, req.params.id); res.json({ ok: true }); }));
+
+  // ---------- Achat du VIP (paiement unique en crypto) ----------
+  // Les formules sont desactivees par defaut : rien ne se vend tant que l'admin n'a pas regle les prix et active une formule.
+  const DEFAULT_PLANS = [
+    { id: '30d', label: '30 jours', days: 30, price: 5, enabled: false }, { id: '90d', label: '90 jours', days: 90, price: 12, enabled: false },
+    { id: '365d', label: '1 an', days: 365, price: 40, enabled: false }, { id: 'life', label: 'À vie', days: null, price: 80, enabled: false }
+  ];
+  const CURRENCY = 'eur';
+  const getPlans = async () => (await store.setting('vipPlans')) || DEFAULT_PLANS;
+  const pubOrder = o => ({ id: o.id, label: o.label, amount: o.amount, currency: o.currency, status: o.status, createdAt: o.createdAt, paidAt: o.paidAt });
+
+  app.get('/api/vip/plans', ah(async (req, res) => {
+    const plans = (await getPlans()).filter(p => p.enabled && p.price > 0).map(p => ({ id: p.id, label: p.label, days: p.days, price: p.price }));
+    res.json({ plans, currency: CURRENCY, methods: { crypto: pay.configured() } });
+  }));
+  app.get('/api/vip/orders', requireUser, ah(async (req, res) => res.json((await store.orders(10, req.session.user.id)).map(pubOrder))));
+
+  app.post('/api/vip/checkout', requireUser, ah(async (req, res) => {
+    if (req.body?.method !== 'crypto') return res.status(400).json({ error: 'Moyen de paiement inconnu.' });
+    if (!pay.configured()) return res.status(503).json({ error: 'Le paiement crypto n\'est pas encore activé.' });
+    const plan = (await getPlans()).find(p => p.id === req.body?.planId && p.enabled && p.price > 0);
+    if (!plan) return res.status(400).json({ error: 'Formule indisponible.' });
+    const u = req.session.user, since = Date.now() - 36e5;
+    if ((await store.orders(50, u.id)).filter(o => o.status === 'pending' && o.createdAt > since).length >= 5) return res.status(429).json({ error: 'Trop de paiements en attente, réessaie plus tard.' });
+    const o = { id: crypto.randomUUID(), userId: u.id, userName: u.name, planId: plan.id, label: plan.label, days: plan.days, amount: Math.round(plan.price * 100) / 100, currency: CURRENCY, provider: 'nowpayments', providerRef: null, status: 'pending', createdAt: Date.now(), paidAt: null };
+    await store.addOrder(o);
+    try {
+      const inv = await pay.createInvoice({ amount: o.amount, currency: o.currency, orderId: o.id, description: `VIP LEGEND · ${o.label}`, ipnUrl: `${BASE_URL}/api/pay/nowpayments/ipn`, successUrl: `${BASE_URL}/#/vip/paid`, cancelUrl: `${BASE_URL}/#/vip/cancel` });
+      await store.updateOrder(o.id, { providerRef: inv.id });
+      res.json({ url: inv.url });
+    } catch (e) { console.error('[paiement]', e.message); await store.updateOrder(o.id, { status: 'failed' }); res.status(502).json({ error: 'Le service de paiement ne répond pas, réessaie dans un instant.' }); }
+  }));
+
+  // Notification du service de paiement : signature obligatoire. Le VIP n'est donne qu'une fois, quand le paiement est TOTALEMENT recu.
+  app.post('/api/pay/nowpayments/ipn', ah(async (req, res) => {
+    if (!pay.verify(req.body, req.get('x-nowpayments-sig'))) return res.status(401).json({ error: 'signature' });
+    const b = req.body, o = await store.order(String(b.order_id || ''));
+    if (!o) return res.status(404).json({ error: 'commande inconnue' });
+    if (Math.abs(Number(b.price_amount) - o.amount) > 0.001 || String(b.price_currency || '').toLowerCase() !== o.currency) return res.status(400).json({ error: 'montant incoherent' });
+    const st = String(b.payment_status);
+    if (st === 'finished') {
+      if (await store.claimPaid(o.id, String(b.payment_id || ''))) { await grantVip(o.userId, o.days, 'Paiement crypto'); B('orderPaid', { ...o, status: 'paid' }); }
+    } else if (st === 'partially_paid' && o.status === 'pending') await store.updateOrder(o.id, { status: 'partial' });
+    else if ((st === 'failed' || st === 'expired') && ['pending', 'partial'].includes(o.status)) await store.updateOrder(o.id, { status: st });
+    else if (st === 'refunded' && o.status !== 'refunded') await store.updateOrder(o.id, { status: 'refunded' });
+    res.json({ ok: true });
+  }));
+
+  app.get('/api/admin/pay', requireAdmin, ah(async (req, res) =>
+    res.json({ crypto: { configured: pay.configured(), sandbox: pay.sandbox(), ipnUrl: `${BASE_URL}/api/pay/nowpayments/ipn` }, plans: await getPlans(), currency: CURRENCY, orders: await store.orders(100) })));
+  app.put('/api/admin/vip-plans', requireAdmin, ah(async (req, res) => {
+    const cur = await getPlans(), inc = Array.isArray(req.body?.plans) ? req.body.plans : [], out = [];
+    for (const p of cur) {
+      const n = inc.find(x => x.id === p.id) || p, price = Math.round(Number(n.price) * 100) / 100, label = String(n.label || '').trim().slice(0, 30);
+      if (!label || !(price >= 0 && price <= 10000)) return res.status(400).json({ error: 'libelle ou prix invalide' });
+      out.push({ id: p.id, label, days: p.days, price, enabled: !!n.enabled && price > 0 });
+    }
+    await store.setSetting('vipPlans', out); res.json({ ok: true, plans: out });
+  }));
+  app.post('/api/admin/orders/:id/mark-paid', requireAdmin, ah(async (req, res) => {   // validation manuelle (virement, incident de notification…)
+    const o = await store.order(req.params.id); if (!o) return res.status(404).json({ error: 'commande inconnue' });
+    if (!(await store.claimPaid(o.id, o.providerRef))) return res.status(409).json({ error: 'deja payee' });
+    await grantVip(o.userId, o.days, req.session.user.name); B('orderPaid', { ...o, status: 'paid' }); res.json({ ok: true });
+  }));
+  app.post('/api/admin/orders/:id/status', requireAdmin, ah(async (req, res) => {
+    const s = req.body?.status; if (!['refunded', 'failed', 'expired'].includes(s)) return res.status(400).json({ error: 'status' });
+    if (!(await store.updateOrder(req.params.id, { status: s }))) return res.status(404).json({ error: 'commande inconnue' }); res.json({ ok: true });
+  }));
 
   // ---------- Bot Discord (meme processus) ----------
   bot = startBot({

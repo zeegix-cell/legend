@@ -9,7 +9,7 @@
 <div class="nright" style="margin-left:auto"><a class="btn ghost sm" href="/">Site</a><button class="btn ghost sm" id="lo">Quitter</button></div></div></nav>
 <main class="wrap" style="padding:40px 24px 90px;max-width:940px">
   <div class="eb">Administration</div><h1 class="t" style="margin-bottom:22px">Panel admin</h1>
-  <div class="tabs" id="tabs"><button class="tab on" data-t="mod">Modération</button><button class="tab" data-t="cats">Catégories</button><button class="tab" data-t="vip">VIP</button><button class="tab" data-t="badges">Badges</button><button class="tab" data-t="rep">Signalements</button><button class="tab" data-t="bot">Discord</button></div>
+  <div class="tabs" id="tabs"><button class="tab on" data-t="mod">Modération</button><button class="tab" data-t="cats">Catégories</button><button class="tab" data-t="vip">VIP</button><button class="tab" data-t="badges">Badges</button><button class="tab" data-t="payments">Paiements</button><button class="tab" data-t="rep">Signalements</button><button class="tab" data-t="bot">Discord</button></div>
   <div id="box"></div>
 </main>
 <script src="/ui.js"></script>
@@ -133,7 +133,27 @@ async function badges(){
   $$('[data-rv]').forEach(a=>a.onclick=async e=>{e.preventDefault();const [bid,uid]=a.dataset.rv.split('|');try{await api(`/api/admin/badges/${bid}/grant/${uid}`,'DELETE');badges()}catch(x){fail(x)}});
 }
 
-const views={mod,cats,vip,badges,rep,bot};
+/* ---- Paiements ---- */
+async function payments(){
+  const d=await api('/api/admin/pay'), eur=n=>Number(n).toFixed(2).replace('.',',')+' €';
+  const ST={pending:'En attente',partial:'Incomplet',paid:'Payée',failed:'Échouée',expired:'Expirée',refunded:'Remboursée'};
+  const cls=s=>s==='paid'?'approved':(s==='pending'||s==='partial')?'pending':'rejected';
+  $('#box').innerHTML=`<div class="gbox"><h3 style="margin-bottom:12px">Paiement crypto (NOWPayments)</h3>
+   <div class="row" style="margin:0"><span>État</span><span class="tag ${d.crypto.configured?'approved':'rejected'}">${d.crypto.configured?'actif'+(d.crypto.sandbox?' · mode test':''):'non configuré'}</span></div>
+   ${d.crypto.configured?'':`<div class="flash" style="margin-top:12px">Pour l'activer : crée un compte sur <b>nowpayments.io</b>, récupère ta <b>clé API</b> et génère une <b>IPN secret key</b> (réglages de ta boutique). Ajoute ensuite dans le conteneur les variables <code>NOWPAYMENTS_API_KEY</code> et <code>NOWPAYMENTS_IPN_SECRET</code> (et <code>NOWPAYMENTS_SANDBOX=1</code> pour tester sans argent réel), puis redémarre-le.</div>`}
+   <div class="dim" style="font-size:.8rem;margin-top:10px">Adresse de notification (envoyée automatiquement avec chaque paiement) : <code>${esc(d.crypto.ipnUrl)}</code></div></div>
+   <h3 style="margin:22px 0 6px">Formules du VIP</h3><p class="dim" style="font-size:.84rem;margin-bottom:12px">Une formule n'est proposée sur le site que si elle est <b>activée</b> et que son prix est supérieur à 0.</p>
+   <div class="gbox">${d.plans.map(p=>`<div class="crow" style="border-top:0"><input type="text" data-pl="${esc(p.id)}" value="${esc(p.label)}" maxlength="30" style="max-width:170px"><span class="dim" style="min-width:90px;font-size:.8rem">${p.days?p.days+' jours':'à vie'}</span><input type="number" step="0.01" min="0" data-pp="${esc(p.id)}" value="${p.price}" style="max-width:110px"><span class="dim">€</span><label><input type="checkbox" data-pe="${esc(p.id)}" ${p.enabled?'checked':''}> Activée</label></div>`).join('')}
+    <button class="btn sm" id="psave" style="margin-top:12px">Enregistrer les formules</button></div>
+   <h3 style="margin:22px 0 12px">Commandes (${d.orders.length})</h3>`+
+   (d.orders.map(o=>`<div class="row"><div><b>${esc(o.userName)}</b> <span class="dim mono" style="font-size:.74rem">${esc(o.userId)}</span><div class="dim" style="font-size:.8rem">VIP · ${esc(o.label)} · ${eur(o.amount)} · ${new Date(o.createdAt).toLocaleString('fr-FR')} · <span class="tag ${cls(o.status)}">${ST[o.status]||esc(o.status)}</span></div></div>
+    <div class="acts">${o.status!=='paid'&&o.status!=='refunded'?`<button class="btn sm" data-paid="${esc(o.id)}">Valider (VIP offert)</button>`:''}${o.status==='paid'?`<button class="btn danger sm" data-refund="${esc(o.id)}">Marquer remboursée</button>`:''}</div></div>`).join('')||'<p class="dim">Aucune commande pour le moment.</p>');
+  $('#psave').onclick=async()=>{try{await api('/api/admin/vip-plans','PUT',{plans:d.plans.map(p=>({id:p.id,label:$(`[data-pl="${p.id}"]`).value,price:parseFloat($(`[data-pp="${p.id}"]`).value)||0,enabled:$(`[data-pe="${p.id}"]`).checked}))});payments()}catch(e){fail(e)}};
+  $$('[data-paid]').forEach(b=>b.onclick=async()=>{if(!confirm('Marquer cette commande comme payée et donner le VIP au membre ?'))return;try{await api(`/api/admin/orders/${b.dataset.paid}/mark-paid`,'POST',{});payments()}catch(e){fail(e)}});
+  $$('[data-refund]').forEach(b=>b.onclick=async()=>{if(!confirm('Marquer comme remboursée ? (Retire le VIP à la main dans l\'onglet VIP si besoin.)'))return;try{await api(`/api/admin/orders/${b.dataset.refund}/status`,'POST',{status:'refunded'});payments()}catch(e){fail(e)}});
+}
+
+const views={mod,cats,vip,badges,payments,rep,bot};
 $$('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;$$('.tab').forEach(x=>x.classList.toggle('on',x===b));views[tab]().catch(fail)});
 $('#lo').onclick=async()=>{await fetch('/auth/logout',{method:'POST'});location.href='/'};
 mod().catch(fail);
