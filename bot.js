@@ -117,17 +117,40 @@ module.exports = function startBot(ctx) {
   };
 
   /* ---------------- droits des salons ---------------- */
-  const botAllow = () => ({ id: client.user.id, allow: [P.ViewChannel, P.SendMessages, P.EmbedLinks, P.ReadMessageHistory, P.ManageMessages, P.Connect] });
+  const WRITERS = ['founder', 'cofounder', 'manager', 'admin'];   // seuls (avec le bot) a pouvoir ecrire dans les salons en lecture seule
+  /* Droits d'un salon. scope : public | vip | staff ; ro : lecture seule ; voice : salon vocal.
+     Les droits sont fusionnes par role (jamais deux entrees pour le meme role). */
   function overwrites(g, scope, ro, voice) {
-    const ev = g.roles.everyone.id, out = [], staff = STAFF_KEYS.map(k => S.roles[k]).filter(Boolean);
-    if (scope === 'public') out.push({ id: ev, allow: [P.ViewChannel, P.ReadMessageHistory], deny: ro ? [P.SendMessages, P.CreatePublicThreads, P.CreatePrivateThreads] : [] });
-    if (scope === 'vip') {
-      out.push({ id: ev, deny: [P.ViewChannel] });
-      out.push({ id: S.roles.vip, allow: voice ? [P.ViewChannel, P.Connect, P.Speak] : [P.ViewChannel, P.ReadMessageHistory, ...(ro ? [] : [P.SendMessages])], deny: ro && !voice ? [P.SendMessages] : [] });
-      for (const id of staff) out.push({ id, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory, P.Connect] });
-    }
-    if (scope === 'staff') { out.push({ id: ev, deny: [P.ViewChannel] }); for (const id of staff) out.push({ id, allow: [P.ViewChannel, P.SendMessages, P.ReadMessageHistory] }); }
-    out.push(botAllow()); return out;
+    const m = new Map(), ev = g.roles.everyone.id;
+    const add = (id, allow = [], deny = []) => {
+      if (!id) return; const e = m.get(id) || { id, allow: new Set(), deny: new Set() };
+      allow.forEach(x => { e.allow.add(x); e.deny.delete(x); }); deny.forEach(x => { if (!e.allow.has(x)) e.deny.add(x); }); m.set(id, e);
+    };
+    const VIEW = [P.ViewChannel, P.ReadMessageHistory], VOICE = [P.ViewChannel, P.Connect, P.Speak, P.UseVAD];
+    const POST = [P.SendMessages, P.SendMessagesInThreads, P.EmbedLinks, P.AttachFiles];
+    const NOPOST = [P.SendMessages, P.SendMessagesInThreads, P.CreatePublicThreads, P.CreatePrivateThreads];
+    if (scope === 'public') add(ev, voice ? VOICE : VIEW, ro && !voice ? NOPOST : []);
+    const HIDE = voice ? [P.ViewChannel, P.Connect] : [P.ViewChannel];   // salon invisible ET inaccessible pour tout le monde
+    if (scope === 'vip') { add(ev, [], HIDE); add(S.roles.vip, voice ? VOICE : [...VIEW, ...(ro ? [] : [P.SendMessages])], ro && !voice ? NOPOST : []); }
+    if (scope === 'staff') add(ev, [], HIDE);
+    if (scope !== 'public') for (const k of STAFF_KEYS) add(S.roles[k], voice ? [...VOICE, P.MoveMembers] : [...VIEW, ...(ro ? [] : POST)]);   // toute l'equipe voit les zones VIP et staff
+    if (ro && !voice) for (const k of WRITERS) add(S.roles[k], [...POST, P.ManageMessages]);                                                  // Fondateur..Admin publient dans les salons d'annonces
+    add(client.user.id, [P.ViewChannel, P.SendMessages, P.EmbedLinks, P.AttachFiles, P.ReadMessageHistory, P.ManageMessages, P.Connect]);
+    return [...m.values()].map(e => ({ id: e.id, allow: [...e.allow], deny: [...e.deny] }));
+  }
+
+  /* Configuration generale du serveur : droits de base de @everyone et reglages de securite. */
+  async function configureGuild(g) {
+    const notes = [];
+    try {
+      await g.roles.everyone.setPermissions([P.ViewChannel, P.SendMessages, P.SendMessagesInThreads, P.ReadMessageHistory, P.AddReactions, P.EmbedLinks, P.AttachFiles, P.UseExternalEmojis, P.Connect, P.Speak, P.UseVAD, P.ChangeNickname, P.CreatePublicThreads], 'LEGEND setup');
+      notes.push('**@everyone** : peut écrire, réagir et parler en vocal, mais ni @everyone/@here ni aucune permission de gestion');
+    } catch (e) { notes.push('⚠️ droits de @everyone inchangés (' + cut(e.message, 60) + ')'); }
+    try {
+      await g.edit({ verificationLevel: 2, explicitContentFilter: 2, defaultMessageNotifications: 1, reason: 'LEGEND setup' });
+      notes.push('**Sécurité** : compte Discord vérifié et ancien de 5 min requis, contenu explicite filtré pour tous, notifications limitées aux mentions');
+    } catch (e) { notes.push('⚠️ réglages de sécurité inchangés (' + cut(e.message, 60) + ')'); }
+    return notes;
   }
 
   async function categoryChannel(c) {   // un salon par categorie du site (cree a la demande)
@@ -302,22 +325,23 @@ module.exports = function startBot(ctx) {
       { key: 'patch', e: '🗒️', n: 'patch-notes', ro: true, topic: 'Les mises à jour du site.' },
       { key: 'badges', e: '🏅', n: 'badges', ro: true, topic: 'Les badges du site et ceux que la communauté débloque.' }] },
     { key: 'ressources', name: 'RESSOURCES', scope: 'public', cats: 'public', ch: [
-      { key: 'requests', e: '🛠️', n: 'demandes', topic: 'Demande une ressource à la communauté.' }] },
+      { key: 'requests', e: '🛠️', n: 'demandes', slow: 30, topic: 'Demande une ressource à la communauté.' }] },
     { key: 'accesVip', name: 'ACCÈS VIP', scope: 'public', ch: [
       { key: 'vipInfo', e: '⭐', n: 'devenir-vip', ro: true, topic: 'Comment obtenir le VIP.' },
       { key: 'vipPreview', e: '👀', n: 'aperçu-vip', ro: true, topic: 'Aperçu des ressources exclusives VIP.' }] },
     { key: 'vip', name: 'ZONE VIP', scope: 'vip', cats: 'vip', ch: [
       { key: 'vipChat', e: '💬', n: 'chat-vip', topic: 'Le salon des membres VIP.' }] },
     { key: 'community', name: 'COMMUNAUTÉ', scope: 'public', ch: [
-      { key: 'chat', e: '💬', n: 'discussion', topic: 'Discussion générale.' },
-      { key: 'media', e: '📸', n: 'médias', topic: 'Captures, clips et créations.' },
-      { key: 'suggestions', e: '💡', n: 'suggestions', topic: 'Une idée pour le site ou le serveur ? Dis-le ici.' }] },
+      { key: 'chat', e: '💬', n: 'discussion', slow: 3, topic: 'Discussion générale.' },
+      { key: 'media', e: '📸', n: 'médias', slow: 10, topic: 'Captures, clips et créations.' },
+      { key: 'suggestions', e: '💡', n: 'suggestions', slow: 60, topic: 'Une idée pour le site ou le serveur ? Dis-le ici.' }] },
     { key: 'support', name: 'SUPPORT', scope: 'public', ch: [
-      { key: 'support', e: '🆘', n: 'support', topic: 'Besoin d\'aide ? Pose ta question.' }] },
+      { key: 'support', e: '🆘', n: 'support', slow: 15, topic: 'Besoin d\'aide ? Pose ta question.' }] },
     { key: 'staff', name: 'STAFF', scope: 'staff', ch: [
       { key: 'mod', e: '🛡️', n: 'modération', topic: 'Validation des ressources et signalements.' },
       { key: 'logs', e: '🧾', n: 'logs', topic: 'Journal : VIP, actions du bot.' },
-      { key: 'botCmd', e: '🤖', n: 'commandes-bot', topic: '/setup, /nettoyer, /vip donner, /vip retirer, /vip statut' }] },
+      { key: 'botCmd', e: '🤖', n: 'commandes-bot', topic: '/setup, /nettoyer, /vip donner, /vip retirer, /vip statut' }],
+      voice: [{ key: 'vcStaff', e: '🛡️', n: 'Réunion staff' }] },
     { key: 'voice', name: 'VOCAUX', scope: 'public', voice: [
       { key: 'vc1', e: '🔊', n: 'Général' }, { key: 'vc2', e: '🎧', n: 'Détente' }, { key: 'vcVip', e: '⭐', n: 'Salon VIP', scope: 'vip' }] }
   ];
@@ -328,7 +352,8 @@ module.exports = function startBot(ctx) {
     await g.channels.fetch();
     const siteCats = await categories();
     await ensureRoles(g, siteCats, made, kept);
-    await progress('Rôles prêts. Création des salons…');
+    const config = await configureGuild(g);
+    await progress('Rôles et réglages prêts. Création des salons…');
     const find = (key, name, type, parentId) => {
       const byId = S.channels[key] && g.channels.cache.get(S.channels[key]); if (byId) return byId;
       return g.channels.cache.find(c => c.name === name && c.type === type && (c.parentId || null) === (parentId || null));
@@ -341,7 +366,7 @@ module.exports = function startBot(ctx) {
     };
     for (const c of PLAN) {
       const cat = await ensure('cat:' + c.key, catTitle(c.name), ChannelType.GuildCategory, null, {}, overwrites(g, c.scope, false, false));
-      for (const d of c.ch || []) await ensure(d.key, chName(d.e, d.n), ChannelType.GuildText, cat.id, { topic: d.topic }, overwrites(g, c.scope, !!d.ro, false));
+      for (const d of c.ch || []) await ensure(d.key, chName(d.e, d.n), ChannelType.GuildText, cat.id, { topic: d.topic, rateLimitPerUser: d.slow || 0 }, overwrites(g, c.scope, !!d.ro, false));
       for (const d of c.voice || []) await ensure(d.key, chName(d.e, d.n), ChannelType.GuildVoice, cat.id, {}, overwrites(g, d.scope || c.scope, false, true));
       if (c.cats) for (const sc of siteCats.filter(x => (c.cats === 'vip') === !!x.vipOnly)) {
         const before = !!S.channels['rc:' + sc.id]; const ch = await categoryChannel(sc);
@@ -398,7 +423,7 @@ module.exports = function startBot(ctx) {
     for (const k of LEGEND_REMOVE()) delete S.channels[k];
     await saveS();
     await postPatchNotes();
-    return { made, kept };
+    return { made, kept, config };
   }
   const LEGEND_REMOVE = () => LEGACY.filter(k => S.channels[k]);
 
@@ -468,7 +493,7 @@ module.exports = function startBot(ctx) {
           try {
             const r = await setupGuild(i.guild, msg => i.editReply(msg).catch(() => {}));
             const first = Object.keys(S.channels).find(k => k.startsWith('rc:'));
-            const summary = `✅ **Serveur prêt.**\nCréé : ${r.made.length ? r.made.slice(0, 30).map(x => '`' + x + '`').join(', ') : 'rien de nouveau'}${r.made.length > 30 ? '…' : ''}\nDéjà en place : ${r.kept.length} élément(s) mis à jour.\nChaque nouvel ajout est annoncé dans le salon de sa catégorie${first ? ` (ex : <#${S.channels[first]}>)` : ''} ; choisis tes notifications dans <#${S.channels.roles}>.`;
+            const summary = `✅ **Serveur prêt.**\nCréé : ${r.made.length ? r.made.slice(0, 30).map(x => '`' + x + '`').join(', ') : 'rien de nouveau'}${r.made.length > 30 ? '…' : ''}\nDéjà en place : ${r.kept.length} élément(s) mis à jour.\nChaque nouvel ajout est annoncé dans le salon de sa catégorie${first ? ` (ex : <#${S.channels[first]}>)` : ''} ; choisis tes notifications dans <#${S.channels.roles}>.\n\n🔒 **Configuration appliquée**\n${r.config.map(x => '• ' + x).join('\n')}\n• **Salons d'annonces** (règlement, annonces, ressources…) : lecture seule pour les membres, seuls Fondateur, Co-Fondateur, Responsable et Administrateur (et le bot) peuvent y écrire\n• **Zones VIP et STAFF** : invisibles pour les autres, **modes lents** sur les salons de discussion`;
             if (optBool(i, 'nettoyer', false)) { const cp = await cleanPrompt(i.guild, i.channelId, i.user.id, true); return i.editReply({ content: summary + '\n\n⬇️ **Dernière étape :** confirme le nettoyage ci-dessous (ou ignore ce message pour tout garder).', embeds: cp.embeds, components: cp.components }); }
             return i.editReply({ content: summary + '\n\n💡 Pour supprimer les anciens salons et rôles : `/nettoyer`.' });
           } catch (e) { console.error('[bot] setup :', e); return i.editReply('❌ Échec : ' + cut(e.message, 300) + '\nVérifie que le bot a les permissions **Gérer les salons** et **Gérer les rôles**, et que son rôle est placé tout en haut de la liste des rôles.'); }

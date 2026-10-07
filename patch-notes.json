@@ -1,5 +1,23 @@
 [
   {
+    "version": "1.8.1",
+    "date": "2026-10-07",
+    "title": "Serveur Discord entièrement configuré",
+    "new": [
+      "**Droits par rôle** : seuls Fondateur, Co-Fondateur, Responsable et Administrateur peuvent écrire dans les salons d'annonces",
+      "Salon vocal **réunion staff** réservé à l'équipe",
+      "**Modes lents** sur les salons de discussion pour éviter le spam"
+    ],
+    "improved": [
+      "Les membres lisent les salons d'information et de ressources, mais n'y écrivent plus",
+      "Zones VIP et STAFF invisibles pour les autres membres (salons texte et vocaux)",
+      "Sécurité du serveur renforcée : vérification des comptes, filtre de contenu, notifications limitées aux mentions"
+    ],
+    "fixed": [
+      "Les fondateurs pouvaient être bloqués dans les salons en lecture seule"
+    ]
+  },
+  {
     "version": "1.8.0",
     "date": "2026-10-07",
     "title": "Système de badges",
