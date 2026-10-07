@@ -333,7 +333,8 @@ createStore(DATA).then(store => {
   // ---------- Bot Discord (meme processus) ----------
   bot = startBot({
     store, ranking, admins, baseUrl: BASE_URL, grantVip, revokeVip,
-    describe: async r => { const c = catOf(await store.categories(), r); return { categoryName: c ? c.name : String(r.category), vipOnly: !!(c && c.vipOnly) }; }
+    categories: () => store.categories(),
+    describe: async r => { const c = catOf(await store.categories(), r); return { categoryId: c ? c.id : slug(String(r.category)), categoryName: c ? c.name : String(r.category), vipOnly: !!(c && c.vipOnly) }; }
   });
   app.get('/api/admin/bot', requireAdmin, ah(async (req, res) => res.json(await bot.status())));
 
