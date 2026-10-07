@@ -334,6 +334,7 @@ createStore(DATA).then(store => {
   bot = startBot({
     store, ranking, admins, baseUrl: BASE_URL, grantVip, revokeVip,
     categories: () => store.categories(),
+    readImage: name => fs.promises.readFile(path.join(IMGS, path.basename(String(name)))),   // image de couverture (basename : pas de remontee de dossier)
     describe: async r => { const c = catOf(await store.categories(), r); return { categoryId: c ? c.id : slug(String(r.category)), categoryName: c ? c.name : String(r.category), vipOnly: !!(c && c.vipOnly) }; }
   });
   app.get('/api/admin/bot', requireAdmin, ah(async (req, res) => res.json(await bot.status())));

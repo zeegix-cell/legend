@@ -6,8 +6,11 @@
    Variables : DISCORD_BOT_TOKEN, DISCORD_GUILD_ID (+ DISCORD_CLIENT_ID deja utilise pour la connexion). */
 const {
   Client, GatewayIntentBits, Events, ChannelType, PermissionFlagsBits: P, EmbedBuilder,
-  ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder
+  ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, AttachmentBuilder
 } = require('discord.js');
+
+let cards = null;   // images generees (cartes d'annonce et bannieres) ; le bot marche aussi sans
+try { cards = require('./cards'); } catch (e) { console.log('Cartes visuelles desactivees :', e.message); }
 
 const ORANGE = 0xff5a1f, GOLD = 0xf5b942, GREEN = 0x4ade80, RED = 0xf87171, GREY = 0x71717a;
 const EPHEMERAL = 64;
@@ -21,7 +24,7 @@ const emo = id => EMOJI[id] || '📁';
 const firstEmoji = s => { const m = /^(\p{Extended_Pictographic}️?)/u.exec(s); return m ? m[1] : null; };
 
 module.exports = function startBot(ctx) {
-  const { store, ranking, admins, baseUrl, grantVip, revokeVip, describe, categories } = ctx;
+  const { store, ranking, admins, baseUrl, grantVip, revokeVip, describe, categories, readImage } = ctx;
   const { DISCORD_BOT_TOKEN: token, DISCORD_GUILD_ID: guildId, DISCORD_CLIENT_ID: clientId } = process.env;
   const noop = async () => {};
   const off = { enabled: false, resourceAdded: noop, resourceApproved: noop, reportAdded: noop, vipChanged: noop, status: async () => ({ enabled: false }) };
@@ -38,22 +41,29 @@ module.exports = function startBot(ctx) {
   const link = (label, url) => new ButtonBuilder().setLabel(label).setStyle(ButtonStyle.Link).setURL(url);
 
   /* ---------------- hierarchie de roles ---------------- */
+  const BROAD = [P.ManageGuild, P.ManageChannels, P.ManageRoles, P.ManageMessages, P.KickMembers, P.BanMembers, P.ModerateMembers, P.ViewAuditLog, P.MentionEveryone, P.ManageNicknames, P.MuteMembers, P.DeafenMembers, P.MoveMembers];
   const ROLES = [
     { key: 'sep1', name: '━━━ ÉQUIPE ━━━', color: 0x3f3f46 },
-    { key: 'direction', name: '👑・Direction', color: 0xef4444, hoist: true, perms: [P.ManageGuild, P.ManageChannels, P.ManageRoles, P.ManageMessages, P.KickMembers, P.BanMembers, P.ModerateMembers, P.ViewAuditLog, P.MentionEveryone, P.ManageNicknames, P.MuteMembers, P.DeafenMembers, P.MoveMembers] },
+    { key: 'founder', old: ['direction'], name: '👑・Fondateur', color: 0xef4444, hoist: true, perms: BROAD },
+    { key: 'cofounder', name: '💎・Co-Fondateur', color: 0xec4899, hoist: true, perms: BROAD },
+    { key: 'manager', name: '👔・Responsable', color: 0xa855f7, hoist: true, perms: [P.ManageChannels, P.ManageMessages, P.KickMembers, P.BanMembers, P.ModerateMembers, P.ViewAuditLog, P.ManageNicknames, P.MentionEveryone] },
+    { key: 'dev', name: '💻・Développeur', color: 0x6366f1, hoist: true, perms: [] },
     { key: 'admin', old: ['staff'], oldNames: ['⚙️・Staff', '⚙️┃Staff'], name: '🛡️・Administrateur', color: 0xf97316, hoist: true, perms: [P.ManageChannels, P.ManageMessages, P.KickMembers, P.BanMembers, P.ModerateMembers, P.ViewAuditLog, P.ManageNicknames, P.MentionEveryone] },
     { key: 'mod', name: '🔨・Modérateur', color: 0xfacc15, hoist: true, perms: [P.ManageMessages, P.ModerateMembers, P.MuteMembers, P.MoveMembers, P.ManageNicknames, P.ViewAuditLog] },
     { key: 'support', name: '🎧・Support', color: 0x38bdf8, hoist: true, perms: [P.ManageMessages, P.ModerateMembers] },
+    { key: 'helper', name: '🙌・Helper', color: 0x2dd4bf, hoist: true, perms: [] },
     { key: 'sep2', name: '━━━ COMMUNAUTÉ ━━━', color: 0x3f3f46 },
+    { key: 'partner', name: '🏢・Partenaire', color: 0x14b8a6, hoist: true },
     { key: 'vip', oldNames: ['★┃VIP', '⭐・VIP'], name: '⭐・VIP', color: GOLD, hoist: true },
     { key: 'top', name: '🏆・Top de la semaine', color: 0xfb923c, hoist: true },
     { key: 'creator', oldNames: ['🛠️┃Créateur'], name: '🛠️・Créateur', color: GREEN, hoist: true },
+    { key: 'member', name: '👤・Membre', color: 0x9ca3af },
     { key: 'sep3', name: '━━━ NOTIFICATIONS ━━━', color: 0x3f3f46 },
     { key: 'n_news', name: '🔔・Nouveautés', color: 0x71717a, mention: true },
     { key: 'n_give', name: '🎁・Giveaways', color: 0x71717a, mention: true },
     { key: 'n_ann', name: '📢・Annonces', color: 0x71717a, mention: true }
   ];
-  const STAFF_KEYS = ['direction', 'admin', 'mod', 'support'];
+  const STAFF_KEYS = ['founder', 'cofounder', 'manager', 'admin', 'mod', 'support'];
   const catRoleName = c => cut(`🔔・${c.name}`, 100);
 
   async function ensureRoles(g, siteCats, made, kept) {
@@ -88,12 +98,16 @@ module.exports = function startBot(ctx) {
       for (let j = 0; j < chunk.length; j += 5) rows.push(new ActionRowBuilder().addComponents(chunk.slice(j, j + 5).map(x => {
         const b = new ButtonBuilder().setCustomId('role:' + x.key).setLabel(cut(x.role.name.replace(/^.*?・/, ''), 80)).setStyle(ButtonStyle.Secondary), em = firstEmoji(x.role.name); if (em) b.setEmoji(em); return b; })));
       const payload = { components: rows };
-      if (i === 0) payload.embeds = [new EmbedBuilder().setColor(ORANGE).setTitle('🎭 Tes notifications').setDescription('Clique sur un bouton pour **recevoir** (ou arrêter de recevoir) les annonces.\n\n🔔 **Nouveautés** · 🎁 **Giveaways** · 📢 **Annonces**\nEt un rôle par **catégorie** : tu es prévenu à chaque nouvel ajout dans celles qui t\'intéressent.')];
+      if (i === 0) {
+        const e = new EmbedBuilder().setColor(ORANGE).setDescription('Clique sur un bouton pour **recevoir** (ou arrêter de recevoir) les annonces.\n\n🔔 **Nouveautés** · 🎁 **Giveaways** · 📢 **Annonces**\nEt un rôle par **catégorie** : tu es prévenu à chaque nouvel ajout dans celles qui t\'intéressent.');
+        const png = cards ? await cards.sectionBanner({ title: 'Tes notifications', subtitle: 'Choisis ce que tu veux recevoir' }).catch(() => null) : null;
+        if (png) { payload.files = [new AttachmentBuilder(png, { name: 'banner.png' })]; e.setImage('attachment://banner.png'); } else e.setTitle('🎭 Tes notifications');
+        payload.embeds = [e];
+      }
       ids.push((await ch.send(payload)).id);
     }
     S.menus = ids; await saveS();
-  }
-  const categoryRole = async c => {   // role de notification d'une nouvelle categorie du site
+  }  const categoryRole = async c => {   // role de notification d'une nouvelle categorie du site
     if (c.vipOnly || !S.channels['cat:ressources']) return null;
     const g = await getGuild(); await g.roles.fetch();
     let role = S.roles['c:' + c.id] && g.roles.cache.get(S.roles['c:' + c.id]);
@@ -133,49 +147,52 @@ module.exports = function startBot(ctx) {
     const m = await g.members.fetch(uid).catch(() => null); if (m && !m.roles.cache.has(role.id)) await m.roles.add(role, 'Premiere ressource validee');
   });
 
+  const coverOf = async r => { if (!r.images || !r.images[0] || !readImage) return null; try { return await readImage(r.images[0]); } catch { return null; } };
+
   const resourceApproved = guard('annonce ressource', async r => {
-    const d = await describe(r), vip = d.vipOnly, url = site('/#/r/' + r.id), ts = Math.floor((r.createdAt || Date.now()) / 1000);
+    const d = await describe(r), vip = d.vipOnly, url = site('/#/r/' + r.id), catUrl = site('/#/ressources/' + encodeURIComponent(d.categoryId));
     const infos = [r.version && `v${cut(r.version, 20)}`, r.framework, r.fileSize && sizeStr(r.fileSize)].filter(Boolean).join(' · ');
-    const lines = [
-      `**Nom :** [${cut(r.title, 120)}](${url})`,
-      `**Catégorie :** [${d.categoryName}](${site('/#/ressources/' + encodeURIComponent(d.categoryId))})`,
-      `**Accès :** ${vip ? '⭐ VIP' : 'Gratuit'}`,
-      `**Par :** ${cut(r.authorName, 60)}`,
-      `**Publié :** <t:${ts}:R>`
-    ];
-    if (infos) lines.push(`**Infos :** ${infos}`);
-    const desc = cut(r.description, 220).replace(/\s*\n\s*/g, ' ').trim();
-    const e = new EmbedBuilder().setColor(vip ? GOLD : ORANGE).setAuthor({ name: 'LEGEND', iconURL: site('/logo.png'), url: site('/') })
-      .setTitle(`${emo(d.categoryId)} Nouvel ajout — ${d.categoryName}`).setURL(url)
-      .setDescription('Une ressource a été ajoutée sur le site.\n\n' + lines.join('\n') + (desc ? `\n\n> ${desc}` : ''))
+    const desc = cut(r.description, 240).replace(/\s*\n\s*/g, ' ').trim();
+    const cover = await coverOf(r);
+    const png = cards ? await cards.resourceCard({ title: r.title, category: d.categoryName, author: r.authorName, vip, cover }).catch(e => { console.error('[bot] carte :', e.message); return null; }) : null;
+    const e = new EmbedBuilder().setColor(vip ? GOLD : ORANGE)
+      .setAuthor({ name: `Nouvel ajout · ${d.categoryName}`, iconURL: site('/logo.png'), url: catUrl })
+      .setTitle(cut(r.title, 250)).setURL(url)
+      .setDescription(desc ? `> ${desc}` : 'Une ressource a été ajoutée sur le site.')
+      .addFields({ name: 'Catégorie', value: `[${d.categoryName}](${catUrl})`, inline: true }, { name: 'Accès', value: vip ? '⭐ VIP' : '🟢 Gratuit', inline: true }, { name: 'Créateur', value: cut(r.authorName, 60), inline: true })
       .setFooter({ text: vip ? 'LEGEND · zone VIP' : 'LEGEND · ressources FiveM' }).setTimestamp(r.createdAt || Date.now());
-    if (r.images && r.images[0]) e.setImage(site('/img/' + r.images[0]));
-    const row = new ActionRowBuilder().addComponents(link(vip ? 'Voir (VIP)' : 'Voir et télécharger', url), link('Catégorie · ' + cut(d.categoryName, 40), site('/#/ressources/' + encodeURIComponent(d.categoryId))));
+    if (infos) e.addFields({ name: 'Détails', value: infos, inline: false });
+    const files = [];
+    if (png) { files.push(new AttachmentBuilder(png, { name: 'card.png' })); e.setImage('attachment://card.png'); }
+    else if (r.images && r.images[0]) e.setImage(site('/img/' + r.images[0]));
+    const row = new ActionRowBuilder().addComponents(link(vip ? 'Voir (VIP)' : 'Voir et télécharger', url), link('Catégorie · ' + cut(d.categoryName, 40), catUrl));
     const catRole = vip ? null : await categoryRole({ id: d.categoryId, name: d.categoryName, vipOnly: false }).catch(() => null);
     const pingId = vip ? S.roles.vip : catRole && catRole.id;
     const target = (await categoryChannel({ id: d.categoryId, name: d.categoryName, vipOnly: vip }).catch(() => null)) || (await chan('announce'));
-    if (target) await target.send({ content: pingId ? `<@&${pingId}>` : undefined, embeds: [e], components: [row], allowedMentions: { roles: pingId ? [pingId] : [] } });
+    if (target) await target.send({ content: pingId ? `<@&${pingId}>` : undefined, embeds: [e], files, components: [row], allowedMentions: { roles: pingId ? [pingId] : [] } });
     if (vip) {   // apercu public (sans lien de telechargement) pour donner envie
-      const t = new EmbedBuilder().setColor(GOLD).setAuthor({ name: 'LEGEND', iconURL: site('/logo.png') }).setTitle('⭐ Nouveauté VIP — ' + cut(r.title, 200))
-        .setDescription(`Une ressource exclusive vient d'arriver dans la **zone VIP**.\n\n**Catégorie :** ${d.categoryName}\n**Par :** ${cut(r.authorName, 60)}`).setFooter({ text: 'Réservé aux membres VIP' }).setTimestamp();
-      if (r.images && r.images[0]) t.setImage(site('/img/' + r.images[0]));
-      await send('vipPreview', { embeds: [t], components: [new ActionRowBuilder().addComponents(link('Devenir VIP', site('/#/vip')))] });
+      const tpng = cards ? await cards.resourceCard({ title: r.title, category: d.categoryName, author: r.authorName, vip: true, cover, teaser: true }).catch(() => null) : null;
+      const t = new EmbedBuilder().setColor(GOLD).setAuthor({ name: 'Nouveauté VIP', iconURL: site('/logo.png') }).setTitle(cut(r.title, 200))
+        .setDescription(`Une ressource exclusive vient d'arriver dans la **zone VIP**.\nDébloque-la avec le passe VIP.`).setFooter({ text: 'Réservé aux membres VIP' }).setTimestamp();
+      const tfiles = []; if (tpng) { tfiles.push(new AttachmentBuilder(tpng, { name: 'teaser.png' })); t.setImage('attachment://teaser.png'); }
+      await send('vipPreview', { embeds: [t], files: tfiles, components: [new ActionRowBuilder().addComponents(link('Devenir VIP', site('/#/vip')))] });
     }
     await giveCreator(r.authorId);
   });
 
   const pendingNotice = guard('moderation', async r => {
-    const d = await describe(r);
-    const e = new EmbedBuilder().setColor(GREY).setTitle('⏳ ' + cut(r.title, 240)).setURL(site('/#/r/' + r.id))
+    const d = await describe(r), cover = await coverOf(r);
+    const png = cards ? await cards.resourceCard({ title: r.title, category: d.categoryName, author: r.authorName, vip: d.vipOnly, cover }).catch(() => null) : null;
+    const e = new EmbedBuilder().setColor(GREY).setAuthor({ name: 'En attente de validation', iconURL: site('/logo.png') }).setTitle(cut(r.title, 240)).setURL(site('/#/r/' + r.id))
       .setDescription(cut(r.description, 400) || '—')
       .addFields({ name: 'Catégorie', value: d.categoryName, inline: true }, { name: 'Par', value: `${cut(r.authorName, 60)} (<@${r.authorId}>)`, inline: true }, { name: 'Taille', value: sizeStr(r.fileSize || 0), inline: true })
-      .setFooter({ text: 'En attente de validation' }).setTimestamp();
+      .setFooter({ text: 'Valider = publier et annoncer' }).setTimestamp();
+    const files = []; if (png) { files.push(new AttachmentBuilder(png, { name: 'card.png' })); e.setImage('attachment://card.png'); }
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('res:approve:' + r.id).setLabel('Valider').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('res:reject:' + r.id).setLabel('Refuser').setStyle(ButtonStyle.Danger), link('Ouvrir', site('/#/r/' + r.id)));
-    await send('mod', { embeds: [e], components: [row] });
-  });
-  const resourceAdded = guard('ressource ajoutee', async r => (r.status === 'approved' ? resourceApproved(r) : pendingNotice(r)));
+    await send('mod', { embeds: [e], files, components: [row] });
+  });  const resourceAdded = guard('ressource ajoutee', async r => (r.status === 'approved' ? resourceApproved(r) : pendingNotice(r)));
 
   const reportAdded = guard('signalement', async (rep, r) => {
     const e = new EmbedBuilder().setColor(RED).setTitle('🚩 Signalement').setDescription(cut(rep.reason, 500))
@@ -269,22 +286,50 @@ module.exports = function startBot(ctx) {
       }
       await progress(`Section « ${catTitle(c.name)} » prête.`);
     }
-    // l'equipe du site recoit le role Direction
-    const dir = g.roles.cache.get(S.roles.direction);
-    for (const uid of admins) { const m = await g.members.fetch(uid).catch(() => null); if (m && dir && !m.roles.cache.has(dir.id)) await m.roles.add(dir, 'Admin du site').catch(() => {}); }
-    // messages d'accueil (une seule fois par salon)
-    const empty = async ch => ch && ch.isTextBased() && (await ch.messages.fetch({ limit: 1 }).catch(() => ({ size: 1 }))).size === 0;
-    const rules = await chan('rules'), info = await chan('info'), web = await chan('site'), vipInfo = await chan('vipInfo');
-    if (await empty(rules)) await rules.send({ embeds: [new EmbedBuilder().setColor(ORANGE).setTitle('📜 Règlement').setDescription([
-      '**1.** Respecte tout le monde : pas d\'insultes, de harcèlement ni de discrimination.',
-      '**2.** Pas de spam, de publicité ni de liens douteux.',
-      '**3.** Partage uniquement des ressources dont tu es l\'auteur ou dont la licence l\'autorise. Les scripts payants piratés ou volés sont **interdits**.',
-      '**4.** Les décisions du staff sont à respecter ; en cas de souci, ouvre un ticket dans le support.',
-      '**5.** Un contenu pose problème ? Utilise le bouton « Signaler » sur le site.'].join('\n\n')).setFooter({ text: 'En restant sur ce serveur, tu acceptes ces règles.' })] });
-    if (await empty(info)) await info.send({ embeds: [new EmbedBuilder().setColor(ORANGE).setTitle('ℹ️ LEGEND').setDescription('Des ressources FiveM partagées par la communauté, vérifiées avant publication.\n\n• Une **catégorie = un salon** : chaque nouvel ajout est annoncé dans la section **RESSOURCES**.\n• Choisis tes **notifications** dans <#' + (S.channels.roles || '') + '>.\n• Le **classement** des créateurs est publié chaque lundi.\n• Le **passe VIP** donne accès aux ressources exclusives.\n• Des **outils gratuits** : écran de chargement FiveM et bannières Discord animées.')] });
-    if (await empty(web)) await web.send({ embeds: [new EmbedBuilder().setColor(ORANGE).setTitle('🌐 Site officiel').setDescription('Toutes les ressources, le classement et les outils sont sur le site.')], components: [new ActionRowBuilder().addComponents(link('Ouvrir le site', site('/')), link('Ressources', site('/#/ressources')), link('Classement', site('/#/classement')), link('Outils', site('/#/tools/banner')))] });
-    if (await empty(vipInfo)) await vipInfo.send({ embeds: [new EmbedBuilder().setColor(GOLD).setTitle('⭐ Passe VIP').setDescription('Le VIP donne accès à la **zone VIP** : des ressources exclusives, un salon privé et les modèles premium des outils.\n\nIl est attribué par l\'équipe, pour une durée limitée ou à vie, et s\'arrête automatiquement à la fin de la période.\n\nRegarde <#' + (S.channels.vipPreview || '') + '> pour un aperçu des dernières nouveautés.')], components: [new ActionRowBuilder().addComponents(link('Découvrir le VIP', site('/#/vip')))] });
-    await postRoleMenu(g);
+    // les admins du site : le premier est Fondateur, le second Co-Fondateur
+    for (const [idx, uid] of [...admins].entries()) {
+      const role = g.roles.cache.get(S.roles[idx === 0 ? 'founder' : 'cofounder']), m = await g.members.fetch(uid).catch(() => null);
+      if (m && role && !m.roles.cache.has(role.id)) await m.roles.add(role, 'Admin du site').catch(() => {});
+    }
+    // salons d'information : entete illustree, republiee a chaque /setup (les anciens messages du bot sont supprimes)
+    const post = async (key, banner, embed, components) => {
+      const ch = await chan(key); if (!ch) return;
+      const old = await ch.messages.fetch({ limit: 30 }).catch(() => null);
+      if (old && old.values) for (const m of old.values()) if (m.author && m.author.id === client.user.id) await m.delete().catch(() => {});
+      const files = [], png = cards ? await cards.sectionBanner(banner).catch(() => null) : null;
+      if (png) { files.push(new AttachmentBuilder(png, { name: 'banner.png' })); embed.setImage('attachment://banner.png'); } else embed.setTitle(banner.title);
+      await ch.send({ embeds: [embed], files, components: components || [] });
+    };
+    const GOLD_HEX = '#f5b942';
+    await post('rules', { title: 'Règlement', subtitle: 'À lire avant de participer au serveur' }, new EmbedBuilder().setColor(ORANGE).setDescription([
+      '**1️⃣  Respect**\nPas d\'insultes, de harcèlement ni de discrimination. On reste courtois.',
+      '**2️⃣  Pas de spam**\nPas de publicité, de pub en MP ni de liens douteux.',
+      '**3️⃣  Contenus légaux**\nPartage uniquement ce dont tu es l\'auteur ou dont la licence l\'autorise. Les scripts payants piratés ou volés sont **interdits**.',
+      '**4️⃣  Le staff a raison**\nSi tu as un souci, ouvre un ticket dans le support au lieu de débattre en public.',
+      '**5️⃣  Signaler**\nUn contenu pose problème ? Utilise le bouton « Signaler » sur le site.'].join('\n\n')).setFooter({ text: 'En restant sur ce serveur, tu acceptes ces règles.' }));
+    await post('info', { title: 'Informations', subtitle: 'Tout savoir sur LEGEND' }, new EmbedBuilder().setColor(ORANGE).setDescription([
+      '### 📦  Ressources',
+      'Une **catégorie = un salon** : chaque nouvel ajout est annoncé dans la section **RESSOURCES**.',
+      '### 🔔  Notifications',
+      'Choisis ce que tu veux recevoir dans <#' + (S.channels.roles || '') + '>.',
+      '### 🏆  Classement',
+      'Les créateurs les plus téléchargés sont mis en avant chaque lundi.',
+      '### ⭐  Passe VIP',
+      'Accède à la zone VIP et aux ressources exclusives.',
+      '### 🛠️  Outils gratuits',
+      'Écran de chargement FiveM et bannières Discord animées, sur le site.'].join('\n')));
+    await post('site', { title: 'Site officiel', subtitle: 'Ressources, classement et outils' }, new EmbedBuilder().setColor(ORANGE).setDescription('Toutes les ressources, le classement des créateurs et les outils gratuits sont sur le site.'),
+      [new ActionRowBuilder().addComponents(link('Ouvrir le site', site('/')), link('Ressources', site('/#/ressources')), link('Classement', site('/#/classement')), link('Outils', site('/#/tools/banner')))]);
+    await post('vipInfo', { title: 'Passe VIP', subtitle: 'Accès exclusif', accent: GOLD_HEX }, new EmbedBuilder().setColor(GOLD).setDescription([
+      'Le VIP ouvre la **zone VIP** :',
+      '• des **ressources exclusives**',
+      '• un **salon privé**',
+      '• les **modèles premium** des outils',
+      '',
+      'Il est attribué par l\'équipe, pour une durée limitée ou à vie, et s\'arrête automatiquement à la fin de la période.',
+      '',
+      'Un aperçu des dernières nouveautés est dans <#' + (S.channels.vipPreview || '') + '>.'].join('\n')),
+      [new ActionRowBuilder().addComponents(link('Découvrir le VIP', site('/#/vip')))]);    await postRoleMenu(g);
     for (const k of LEGEND_REMOVE()) delete S.channels[k];
     await saveS();
     return { made, kept };
