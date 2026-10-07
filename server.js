@@ -448,7 +448,7 @@ createStore(DATA).then(store => {
       const inv = await pay.createInvoice({ amount: o.amount, currency: o.currency, orderId: o.id, description: `VIP LEGEND · ${o.label}`, ipnUrl: `${BASE_URL}/api/pay/nowpayments/ipn`, successUrl: `${BASE_URL}/#/vip/paid`, cancelUrl: `${BASE_URL}/#/vip/cancel` });
       await store.updateOrder(o.id, { providerRef: inv.id });
       res.json({ url: inv.url });
-    } catch (e) { console.error('[paiement]', e.message); await store.updateOrder(o.id, { status: 'failed' }); res.status(502).json({ error: 'Le service de paiement ne répond pas, réessaie dans un instant.' }); }
+    } catch (e) { console.error('[paiement]', e.message); await store.updateOrder(o.id, { status: 'failed' }); res.status(502).json({ error: 'Le service de paiement ne répond pas, réessaie dans un instant.' + (admins.has(u.id) ? ` (détail admin : ${e.message})` : '') }); }
   }));
 
   // Notification du service de paiement : signature obligatoire. Le VIP n'est donne qu'une fois, quand le paiement est TOTALEMENT recu.
