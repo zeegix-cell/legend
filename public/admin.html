@@ -9,7 +9,7 @@
 <div class="nright" style="margin-left:auto"><a class="btn ghost sm" href="/">Site</a><button class="btn ghost sm" id="lo">Quitter</button></div></div></nav>
 <main class="wrap" style="padding:40px 24px 90px;max-width:940px">
   <div class="eb">Administration</div><h1 class="t" style="margin-bottom:22px">Panel admin</h1>
-  <div class="tabs" id="tabs"><button class="tab on" data-t="mod">Modération</button><button class="tab" data-t="cats">Catégories</button><button class="tab" data-t="vip">VIP</button><button class="tab" data-t="rep">Signalements</button><button class="tab" data-t="bot">Discord</button></div>
+  <div class="tabs" id="tabs"><button class="tab on" data-t="mod">Modération</button><button class="tab" data-t="cats">Catégories</button><button class="tab" data-t="vip">VIP</button><button class="tab" data-t="badges">Badges</button><button class="tab" data-t="rep">Signalements</button><button class="tab" data-t="bot">Discord</button></div>
   <div id="box"></div>
 </main>
 <script src="/ui.js"></script>
@@ -104,7 +104,36 @@ async function bot(){
    `<div class="gbox"><h3 style="margin-bottom:8px">Commandes (réservées aux admins du site)</h3><div class="dim" style="font-size:.88rem;line-height:1.9"><code>/setup</code> — crée ou met à jour la hiérarchie de rôles et tous les salons (<code>/setup nettoyer:True</code> propose aussi de supprimer les anciens)<br><code>/nettoyer</code> — supprime les salons et rôles qui ne font pas partie de LEGEND, après confirmation<br><code>/vip donner</code> · <code>/vip retirer</code> · <code>/vip statut</code> — gérer les VIP depuis Discord<br>Les nouvelles ressources, les signalements et le classement du lundi sont annoncés automatiquement.</div></div>`;
 }
 
-const views={mod,cats,vip,rep,bot};
+/* ---- Badges ---- */
+async function badges(){
+  const d=await api('/api/admin/badges'), all=[...d.manual,...d.auto];
+  $('#box').innerHTML=`<div class="gbox"><h3 style="margin-bottom:14px">Donner un badge</h3>
+    <div class="fld"><label>Membre (pseudo déjà connecté au site, ou colle un ID Discord)</label><input id="bq" placeholder="Pseudo ou ID Discord…" autocomplete="off"><div class="sug" id="bsug"></div></div>
+    <div class="grid2"><div class="fld"><label>ID Discord choisi</label><input id="buid" placeholder="123456789012345678"></div>
+    <div class="fld"><label>Badge</label><select id="bsel">${all.map(b=>`<option value="${esc(b.id)}">${esc(b.emoji)} ${esc(b.name)}${b.auto?' (auto)':''}</option>`).join('')}</select></div></div>
+    <button class="btn" id="bgive">Donner le badge</button></div>
+   <div class="gbox"><h3 style="margin-bottom:14px">Créer un badge spécial</h3>
+    <div class="grid2"><div class="fld"><label>Emoji (un seul)</label><input id="ne" maxlength="8" placeholder="🏅"></div><div class="fld"><label>Nom</label><input id="nn" maxlength="30" placeholder="Nom du badge"></div></div>
+    <div class="fld"><label>Description</label><input id="nd" maxlength="120" placeholder="Pourquoi on le reçoit"></div>
+    <div class="grid2"><div class="fld"><label>Couleur</label><input id="nc" type="color" value="#ff5a1f"></div><div class="fld" style="align-self:end"><button class="btn" id="ncreate" style="width:100%">Créer le badge</button></div></div></div>
+   <h3 style="margin:26px 0 12px">Badges spéciaux (${d.manual.length})</h3>`+
+   (d.manual.map(b=>`<div class="gbox"><div class="ghead"><span style="font-size:1.7rem">${esc(b.emoji)}</span><input type="text" data-bn="${esc(b.id)}" value="${esc(b.name)}" maxlength="30" style="max-width:200px"><input type="text" data-bd="${esc(b.id)}" value="${esc(b.description)}" maxlength="120" style="max-width:none;flex:1"><input type="color" data-bc="${esc(b.id)}" value="${esc(b.color)}" style="width:48px;padding:3px"><button class="btn danger sm" data-bdel="${esc(b.id)}">Supprimer</button></div>
+     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${b.holders.map(h=>`<span class="tag">${esc(h.name||h.userId)} <a href="#" data-rv="${esc(b.id)}|${esc(h.userId)}" style="color:var(--bad)" title="Retirer">✕</a></span>`).join('')||'<span class="dim" style="font-size:.84rem">Personne pour le moment.</span>'}</div></div>`).join('')||'<p class="dim">Aucun badge spécial.</p>')+
+   `<h3 style="margin:26px 0 12px">Badges automatiques</h3>`+d.auto.map(b=>`<div class="row"><div>${esc(b.emoji)} <b>${esc(b.name)}</b> <span class="dim" style="font-size:.84rem">— ${esc(b.description)}</span></div><span class="tag">${b.holders} membre${b.holders>1?'s':''}</span></div>`).join('');
+  let t;
+  $('#bq').oninput=e=>{clearTimeout(t);t=setTimeout(async()=>{const q=e.target.value.trim();if(!q){$('#bsug').innerHTML='';return}
+    const us=await api('/api/admin/users?q='+encodeURIComponent(q)).catch(()=>[]);
+    $('#bsug').innerHTML=us.map(u=>`<button data-pk="${esc(u.id)}">${u.avatar?`<img class="avatar" style="width:24px;height:24px" src="${esc(u.avatar)}" alt="">`:''}<span>${esc(u.name)}</span><span class="dim mono" style="font-size:.74rem;margin-left:auto">${esc(u.id)}</span></button>`).join('');
+    $$('[data-pk]').forEach(b=>b.onclick=()=>{$('#buid').value=b.dataset.pk;$('#bsug').innerHTML='';$('#bq').value=''})},200)};
+  $('#bgive').onclick=async()=>{try{const r=await api(`/api/admin/badges/${$('#bsel').value}/grant`,'POST',{userId:$('#buid').value.trim()||$('#bq').value.trim()});if(!r.granted)alert('Ce membre a déjà ce badge.');badges()}catch(e){fail(e)}};
+  $('#ncreate').onclick=async()=>{try{await api('/api/admin/badges','POST',{emoji:$('#ne').value,name:$('#nn').value,description:$('#nd').value,color:$('#nc').value});badges()}catch(e){fail(e)}};
+  const save=id=>async()=>{const b=d.manual.find(x=>x.id===id);try{await api('/api/admin/badges/'+id,'PUT',{emoji:b.emoji,name:$(`[data-bn="${id}"]`).value,description:$(`[data-bd="${id}"]`).value,color:$(`[data-bc="${id}"]`).value})}catch(e){fail(e)}};
+  d.manual.forEach(b=>{['bn','bd','bc'].forEach(k=>{$(`[data-${k}="${b.id}"]`).onchange=save(b.id)})});
+  $$('[data-bdel]').forEach(b=>b.onclick=async()=>{if(!confirm('Supprimer ce badge (retiré à tous les membres) ?'))return;try{await api('/api/admin/badges/'+b.dataset.bdel,'DELETE');badges()}catch(e){fail(e)}});
+  $$('[data-rv]').forEach(a=>a.onclick=async e=>{e.preventDefault();const [bid,uid]=a.dataset.rv.split('|');try{await api(`/api/admin/badges/${bid}/grant/${uid}`,'DELETE');badges()}catch(x){fail(x)}});
+}
+
+const views={mod,cats,vip,badges,rep,bot};
 $$('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;$$('.tab').forEach(x=>x.classList.toggle('on',x===b));views[tab]().catch(fail)});
 $('#lo').onclick=async()=>{await fetch('/auth/logout',{method:'POST'});location.href='/'};
 mod().catch(fail);

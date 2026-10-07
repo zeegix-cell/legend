@@ -1,5 +1,23 @@
 [
   {
+    "version": "1.8.0",
+    "date": "2026-10-07",
+    "title": "Système de badges",
+    "summary": "Collectionne des badges selon ton activité, retrouve-les sur ton profil et dans le classement.",
+    "new": [
+      "**8 badges à débloquer** automatiquement : Premier pas, Contributeur, Prolifique, Populaire, Star, Légende, Ancien et Top de la semaine",
+      "**Badges spéciaux** remis par l'équipe : Fondateur, Partenaire, Chasseur de bugs, Créateur certifié, Entraide",
+      "**Pages profil** des membres : badges, statistiques et ressources publiées",
+      "**Page Badges** avec tout ce qu'il y a à débloquer",
+      "Nouveau salon Discord **🏅・badges** : chaque badge gagné y est annoncé, et la commande `/badges` affiche ceux d'un membre"
+    ],
+    "improved": [
+      "Les badges s'affichent à côté des noms dans le classement",
+      "Le nom de l'auteur sur une ressource mène à son profil"
+    ],
+    "fixed": []
+  },
+  {
     "version": "1.7.0",
     "date": "2026-10-07",
     "title": "Annonces illustrées et patch notes automatiques",

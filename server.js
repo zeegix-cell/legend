@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const createStore = require('./store');
 const startBot = require('./bot');
+const badgeLib = require('./badges');
 
 const {
   PORT = 3000, BASE_URL = 'http://localhost:3000', SESSION_SECRET,
@@ -80,6 +81,36 @@ createStore(DATA).then(store => {
     try { for (const v of await store.vips()) if (v.until !== null && v.until <= Date.now()) { await store.delVip(v.userId); B('vipChanged', v.userId, 'expired', null, null); } } catch (e) { console.error(e); }
   }, 10 * 60 * 1000).unref();
 
+  // ---------- Badges : automatiques (activite) + speciaux (donnes a la main) ----------
+  const statsOf = async uid => {
+    const mine = (await store.resources()).filter(r => r.authorId === uid && r.status === 'approved'), u = await store.user(uid);
+    const first = (u && (u.firstSeen || u.lastLogin)) || (mine.length ? Math.min(...mine.map(r => r.createdAt)) : Date.now());
+    return { resources: mine.length, downloads: mine.reduce((a, r) => a + (r.downloads || 0), 0), days: Math.floor((Date.now() - first) / 864e5), since: first };
+  };
+  const badgeDefs = async () => badgeLib.catalogue(await store.badges());
+  const pubBadge = (b, at) => ({ id: b.id, name: b.name, emoji: b.emoji, description: b.description, color: b.color, auto: !!b.auto, at: at || null });
+  const awardBadge = async (uid, badgeId, by, auto) => {      // true si le badge vient d'etre obtenu (=> annonce Discord)
+    const def = (await badgeDefs()).find(b => b.id === badgeId); if (!def) return false;
+    const fresh = await store.grantBadge({ userId: uid, badgeId, at: Date.now(), grantedBy: by || null, auto: !!auto });
+    if (fresh) B('badgeAwarded', uid, pubBadge(def, Date.now()));
+    return fresh;
+  };
+  const evaluateUser = async (uid, silent) => {                // attribue les badges automatiques merites
+    if (!uid) return [];
+    const s = await statsOf(uid), have = new Set((await store.userBadges(uid)).map(b => b.badgeId)), won = [];
+    for (const b of badgeLib.AUTO) if (b.test && !have.has(b.id) && b.test(s)) {
+      const fresh = await store.grantBadge({ userId: uid, badgeId: b.id, at: Date.now(), grantedBy: null, auto: true });
+      if (fresh) { won.push(b.id); if (!silent) B('badgeAwarded', uid, pubBadge(b, Date.now())); }
+    }
+    return won;
+  };
+  const evalSoon = uid => evaluateUser(uid).catch(e => console.error('[badges]', e.message));
+  const iconsFor = async uids => {                              // emojis des badges (4 max par membre) pour le classement
+    const [manual, all] = await Promise.all([store.badges(), store.allUserBadges()]), defs = new Map(badgeLib.catalogue(manual).map(b => [b.id, b])), by = new Map();
+    for (const x of all) { if (!by.has(x.userId)) by.set(x.userId, []); by.get(x.userId).push(x.badgeId); }
+    return new Map(uids.map(u => [u, badgeLib.sortForDisplay(by.get(u) || [], manual).slice(0, 4).map(id => defs.get(id) && defs.get(id).emoji).filter(Boolean)]));
+  };
+
   // ---------- Discord OAuth2 ----------
   app.get('/auth/login', (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
@@ -104,6 +135,7 @@ createStore(DATA).then(store => {
         avatar: u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=128` : null
       };
       await store.upsertUser({ ...user, lastLogin: Date.now() });
+      evalSoon(user.id);
       req.session.regenerate(err => {
         if (err) return res.status(500).send('Connexion impossible.');
         req.session.user = user;
@@ -122,7 +154,7 @@ createStore(DATA).then(store => {
     return {
       id: r.id, title: r.title, description: r.description, category: c ? c.id : r.category, categoryName: c ? c.name : r.category,
       vipOnly: !!(c && c.vipOnly), version: r.version, framework: r.framework, images: r.images,
-      fileName: r.fileName, fileSize: r.fileSize, authorName: r.authorName,
+      fileName: r.fileName, fileSize: r.fileSize, authorName: r.authorName, authorId: r.authorId,
       views: r.views, downloads: r.downloads, createdAt: r.createdAt, status: r.status
     };
   };
@@ -187,6 +219,7 @@ createStore(DATA).then(store => {
         };
         await store.addResource(item);
         B('resourceAdded', item);
+        if (item.status === 'approved') evalSoon(uid);
         hits.set(uid, [...recent, now]);
         res.json({ id: item.id, status: item.status });
       } catch (e) { console.error(e); cleanup(); res.status(500).json({ error: 'Erreur serveur.' }); }
@@ -200,6 +233,7 @@ createStore(DATA).then(store => {
     if (c?.vipOnly && !isAdmin(req) && !(await vipOf(req.session.user.id)).active) return res.status(403).send('Reserve aux membres VIP.');
     await store.bump(r.id, 'downloads');
     await store.logDownload({ rid: r.id, aid: r.authorId, at: Date.now() });
+    evalSoon(r.authorId);
     res.download(path.join(FILES, r.file), r.fileName);
   }));
 
@@ -222,8 +256,9 @@ createStore(DATA).then(store => {
     }
     const all = from === 0 && to === Infinity;
     for (const [aid, c] of await store.downloadCounts(from, to)) { const a = by.get(aid); if (a) a.downloads = c; }
-    return [...by.values()].filter(a => all || a.downloads > 0)
-      .sort((x, y) => y.downloads - x.downloads || y.resources - x.resources).map(a => ({ ...a, admin: admins.has(a.id) }));
+    const list = [...by.values()].filter(a => all || a.downloads > 0).sort((x, y) => y.downloads - x.downloads || y.resources - x.resources);
+    const icons = await iconsFor(list.slice(0, 50).map(a => a.id));
+    return list.map(a => ({ ...a, admin: admins.has(a.id), badges: icons.get(a.id) || [] }));
   }
   app.get('/api/ranking', ah(async (req, res) => {
     const now = Date.now();
@@ -244,7 +279,7 @@ createStore(DATA).then(store => {
     if (!['approved', 'rejected', 'pending'].includes(s)) return res.status(400).json({ error: 'status' });
     const before = await store.resource(req.params.id);
     if (!(await store.setStatus(req.params.id, s))) return res.status(404).json({ error: 'not found' });
-    if (s === 'approved' && before && before.status !== 'approved') B('resourceApproved', { ...before, status: 'approved' });
+    if (s === 'approved' && before && before.status !== 'approved') { B('resourceApproved', { ...before, status: 'approved' }); evalSoon(before.authorId); }
     res.json({ ok: true });
   }));
   app.delete('/api/admin/resources/:id', requireAdmin, ah(async (req, res) => {
@@ -330,9 +365,63 @@ createStore(DATA).then(store => {
   }));
   app.delete('/api/admin/vip/:uid', requireAdmin, ah(async (req, res) => { await revokeVip(req.params.uid, req.session.user.name); res.json({ ok: true }); }));
 
+  // ---------- Badges : catalogue, profils, administration ----------
+  const catalogueWithHolders = async () => {
+    const [defs, all] = await Promise.all([badgeDefs(), store.allUserBadges()]), n = new Map();
+    for (const x of all) n.set(x.badgeId, (n.get(x.badgeId) || 0) + 1);
+    return defs.map(b => ({ ...pubBadge(b), holders: n.get(b.id) || 0 }));
+  };
+  const memberBadges = async uid => {
+    const [manual, mine] = await Promise.all([store.badges(), store.userBadges(uid)]), defs = new Map(badgeLib.catalogue(manual).map(b => [b.id, b])), at = new Map(mine.map(x => [x.badgeId, x.at]));
+    return badgeLib.sortForDisplay(mine.map(x => x.badgeId), manual).map(id => defs.get(id) && pubBadge(defs.get(id), at.get(id))).filter(Boolean);
+  };
+  app.get('/api/badges', ah(async (req, res) => res.json({ badges: await catalogueWithHolders(), mine: req.session.user ? (await store.userBadges(req.session.user.id)).map(b => b.badgeId) : [] })));
+
+  app.get('/api/members/:id', ah(async (req, res) => {
+    const uid = req.params.id; if (!/^[\w-]{1,40}$/.test(uid)) return res.status(404).json({ error: 'not found' });
+    const [user, all, cats] = await Promise.all([store.user(uid), store.resources(), store.categories()]), mine = all.filter(r => r.authorId === uid && r.status === 'approved');
+    if (!user && !mine.length) return res.status(404).json({ error: 'not found' });
+    const stats = await statsOf(uid);
+    res.json({
+      id: uid, name: (user && user.name) || mine[0].authorName, avatar: (user && user.avatar) || (mine[0] && mine[0].authorAvatar) || '', since: stats.since,
+      admin: admins.has(uid), vip: (await vipOf(uid)).active, stats: { resources: stats.resources, downloads: stats.downloads },
+      badges: await memberBadges(uid), resources: mine.map(r => pub(r, cats))
+    });
+  }));
+
+  const cleanBadge = b => {
+    const name = String(b.name || '').trim().slice(0, 30), emoji = String(b.emoji || '').trim(), description = String(b.description || '').trim().slice(0, 120);
+    if (!name || !emoji || Array.from(emoji).length > 4 || emoji.length > 12) return null;
+    return { name, emoji, description, color: /^#[0-9a-f]{6}$/i.test(b.color || '') ? b.color : '#a1a1aa' };
+  };
+  app.get('/api/admin/badges', requireAdmin, ah(async (req, res) => {
+    const [manual, all, users] = await Promise.all([store.badges(), store.allUserBadges(), store.users()]), names = new Map(users.map(u => [u.id, u.name]));
+    const holders = id => all.filter(x => x.badgeId === id).map(x => ({ userId: x.userId, name: names.get(x.userId) || null, at: x.at }));
+    res.json({ manual: manual.map(b => ({ ...pubBadge({ ...b, auto: false }), holders: holders(b.id) })), auto: badgeLib.AUTO.map(b => ({ ...pubBadge(b), holders: holders(b.id).length })) });
+  }));
+  app.post('/api/admin/badges', requireAdmin, ah(async (req, res) => {
+    const c = cleanBadge(req.body || {}); if (!c) return res.status(400).json({ error: 'nom et emoji requis (1 seul emoji)' });
+    const taken = new Set((await badgeDefs()).map(b => b.id)), manual = await store.badges();
+    const b = { id: uniqueId(slug(c.name), taken), ...c, position: manual.length ? Math.max(...manual.map(x => x.position)) + 1 : 1 };
+    await store.addBadge(b); B('badgesChanged'); res.json(b);
+  }));
+  app.put('/api/admin/badges/:id', requireAdmin, ah(async (req, res) => {
+    const c = cleanBadge(req.body || {}); if (!c) return res.status(400).json({ error: 'nom et emoji requis (1 seul emoji)' });
+    if (!(await store.updateBadge(req.params.id, c))) return res.status(404).json({ error: 'badge speciaux uniquement' });
+    B('badgesChanged'); res.json({ ok: true });
+  }));
+  app.delete('/api/admin/badges/:id', requireAdmin, ah(async (req, res) => { await store.removeBadge(req.params.id); B('badgesChanged'); res.json({ ok: true }); }));
+  app.post('/api/admin/badges/:id/grant', requireAdmin, ah(async (req, res) => {
+    const uid = String(req.body?.userId || '').trim(); if (!/^\d{15,25}$/.test(uid)) return res.status(400).json({ error: 'ID Discord invalide (15 a 25 chiffres).' });
+    if (!(await badgeDefs()).some(b => b.id === req.params.id)) return res.status(404).json({ error: 'badge inconnu' });
+    res.json({ ok: true, granted: await awardBadge(uid, req.params.id, req.session.user.name, false) });
+  }));
+  app.delete('/api/admin/badges/:id/grant/:uid', requireAdmin, ah(async (req, res) => { await store.revokeBadge(req.params.uid, req.params.id); res.json({ ok: true }); }));
+
   // ---------- Bot Discord (meme processus) ----------
   bot = startBot({
     store, ranking, admins, baseUrl: BASE_URL, grantVip, revokeVip,
+    badgeCatalogue: catalogueWithHolders, memberBadges, evaluateUser, awardBadge, statsOf, userName: async uid => { const u = await store.user(uid); return u && u.name; },
     categories: () => store.categories(),
     readImage: name => fs.promises.readFile(path.join(IMGS, path.basename(String(name)))),   // image de couverture (basename : pas de remontee de dossier)
     describe: async r => { const c = catOf(await store.categories(), r); return { categoryId: c ? c.id : slug(String(r.category)), categoryName: c ? c.name : String(r.category), vipOnly: !!(c && c.vipOnly) }; }
@@ -343,5 +432,14 @@ createStore(DATA).then(store => {
   app.use(express.static(path.join(__dirname, 'public'), { index: 'index.html' }));
   app.use((err, req, res, next) => { console.error(err); res.status(500).json({ error: 'Erreur serveur.' }); });
 
-  app.listen(PORT, '0.0.0.0', () => console.log(`Site sur ${BASE_URL} - ecoute sur le port ${PORT} (${admins.size} admin(s))`));
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Site sur ${BASE_URL} - ecoute sur le port ${PORT} (${admins.size} admin(s))`);
+    // 1er demarrage avec les badges : on attribue en silence ceux deja merites (pas d'annonce en rafale)
+    (async () => {
+      if (await store.setting('badgesBackfill')) return;
+      const ids = new Set([...(await store.resources()).map(r => r.authorId), ...(await store.users()).map(u => u.id)]);
+      for (const uid of ids) await evaluateUser(uid, true).catch(() => {});
+      await store.setSetting('badgesBackfill', true);
+    })().catch(e => console.error('[badges]', e.message));
+  });
 }).catch(e => { console.error('Impossible d\'initialiser le stockage :', e.message); process.exit(1); });

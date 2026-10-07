@@ -55,8 +55,18 @@ function jsonStore(dir) {
     async vip(uid) { return rd('vips').find(v => v.userId === uid) || null; },
     async setVip(v) { const l = rd('vips'), i = l.findIndex(x => x.userId === v.userId); if (i >= 0) l[i] = v; else l.push(v); wr('vips', l); },
     async delVip(uid) { wr('vips', rd('vips').filter(v => v.userId !== uid)); },
-    async upsertUser(u) { const l = rd('users'), i = l.findIndex(x => x.id === u.id); if (i >= 0) l[i] = { ...l[i], ...u }; else l.push(u); wr('users', l); },
+    async upsertUser(u) { const l = rd('users'), i = l.findIndex(x => x.id === u.id); if (i >= 0) l[i] = { ...l[i], ...u }; else l.push({ firstSeen: Date.now(), ...u }); wr('users', l); },
     async users() { return rd('users'); },
+    async user(uid) { return rd('users').find(u => u.id === uid) || null; },
+    // badges : definitions speciales (creees par les admins) + attributions
+    async badges() { return rd('badges').sort(by('position')); },
+    async addBadge(b) { const l = rd('badges'); l.push(b); wr('badges', l); },
+    async updateBadge(id, p) { const l = rd('badges'), b = l.find(x => x.id === id); if (!b) return false; Object.assign(b, p); wr('badges', l); return true; },
+    async removeBadge(id) { wr('badges', rd('badges').filter(b => b.id !== id)); wr('user_badges', rd('user_badges').filter(x => x.badgeId !== id)); },
+    async userBadges(uid) { return rd('user_badges').filter(x => x.userId === uid); },
+    async allUserBadges() { return rd('user_badges'); },
+    async grantBadge(g) { const l = rd('user_badges'); if (l.some(x => x.userId === g.userId && x.badgeId === g.badgeId)) return false; l.push(g); wr('user_badges', l); return true; },
+    async revokeBadge(uid, bid) { const l = rd('user_badges'), n = l.length; wr('user_badges', l.filter(x => !(x.userId === uid && x.badgeId === bid))); return l.length !== n; },
     // sessions (connexion persistante)
     async sessGet(sid) { const s = sess[sid]; return s && s.exp > Date.now() ? s.data : null; },
     async sessSet(sid, data, exp) { sess[sid] = { data, exp }; flush(); },
@@ -97,6 +107,9 @@ function mysqlStore(cfg) {
       await q(`CREATE TABLE IF NOT EXISTS users (id VARCHAR(32) PRIMARY KEY, name VARCHAR(100), avatar VARCHAR(255), lastLogin BIGINT) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS sessions (sid VARCHAR(128) PRIMARY KEY, data MEDIUMTEXT, exp BIGINT, INDEX (exp)) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS settings (k VARCHAR(60) PRIMARY KEY, v MEDIUMTEXT) ${T}`);
+      await q(`CREATE TABLE IF NOT EXISTS badges (id VARCHAR(40) PRIMARY KEY, name VARCHAR(40) NOT NULL, emoji VARCHAR(16), description VARCHAR(200), color VARCHAR(7), position INT NOT NULL DEFAULT 0) ${T}`);
+      await q(`CREATE TABLE IF NOT EXISTS user_badges (userId VARCHAR(32) NOT NULL, badgeId VARCHAR(40) NOT NULL, at BIGINT, grantedBy VARCHAR(100), auto TINYINT(1) NOT NULL DEFAULT 0, PRIMARY KEY (userId, badgeId), INDEX (badgeId)) ${T}`);
+      await q('ALTER TABLE users ADD COLUMN firstSeen BIGINT NULL').catch(() => {});   // deja presente apres le 1er demarrage
     },
     async resources() { const [rows] = await pool.query('SELECT * FROM resources ORDER BY createdAt DESC'); return rows.map(toR); },
     async resource(id) { const [rows] = await pool.query('SELECT * FROM resources WHERE id=?', [id]); return rows[0] ? toR(rows[0]) : null; },
@@ -138,9 +151,18 @@ function mysqlStore(cfg) {
     },
     async delVip(uid) { await pool.query('DELETE FROM vips WHERE userId=?', [uid]); },
     async upsertUser(u) {
-      await pool.query('INSERT INTO users (id,name,avatar,lastLogin) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), avatar=VALUES(avatar), lastLogin=VALUES(lastLogin)', [u.id, u.name, u.avatar || '', u.lastLogin]);
+      await pool.query('INSERT INTO users (id,name,avatar,lastLogin,firstSeen) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name), avatar=VALUES(avatar), lastLogin=VALUES(lastLogin), firstSeen=COALESCE(firstSeen, VALUES(firstSeen))', [u.id, u.name, u.avatar || '', u.lastLogin, Date.now()]);
     },
-    async users() { const [r] = await pool.query('SELECT * FROM users'); return r.map(u => ({ ...u, lastLogin: num(u.lastLogin) })); },
+    async users() { const [r] = await pool.query('SELECT * FROM users'); return r.map(u => ({ ...u, lastLogin: num(u.lastLogin), firstSeen: num(u.firstSeen) })); },
+    async user(uid) { const [r] = await pool.query('SELECT * FROM users WHERE id=?', [uid]); return r[0] ? { ...r[0], lastLogin: num(r[0].lastLogin), firstSeen: num(r[0].firstSeen) } : null; },
+    async badges() { const [r] = await pool.query('SELECT * FROM badges ORDER BY position'); return r; },
+    async addBadge(b) { await pool.query('INSERT INTO badges (id,name,emoji,description,color,position) VALUES (?,?,?,?,?,?)', [b.id, b.name, b.emoji, b.description, b.color, b.position]); },
+    async updateBadge(id, p) { const k = Object.keys(p); if (!k.length) return true; const [r] = await pool.query(`UPDATE badges SET ${k.map(x => '`' + x + '`=?').join(',')} WHERE id=?`, [...k.map(x => p[x]), id]); return r.affectedRows > 0; },
+    async removeBadge(id) { await pool.query('DELETE FROM user_badges WHERE badgeId=?', [id]); await pool.query('DELETE FROM badges WHERE id=?', [id]); },
+    async userBadges(uid) { const [r] = await pool.query('SELECT * FROM user_badges WHERE userId=?', [uid]); return r.map(x => ({ ...x, at: num(x.at), auto: !!x.auto })); },
+    async allUserBadges() { const [r] = await pool.query('SELECT * FROM user_badges'); return r.map(x => ({ ...x, at: num(x.at), auto: !!x.auto })); },
+    async grantBadge(g) { const [r] = await pool.query('INSERT IGNORE INTO user_badges (userId,badgeId,at,grantedBy,auto) VALUES (?,?,?,?,?)', [g.userId, g.badgeId, g.at, g.grantedBy, g.auto ? 1 : 0]); return r.affectedRows > 0; },
+    async revokeBadge(uid, bid) { const [r] = await pool.query('DELETE FROM user_badges WHERE userId=? AND badgeId=?', [uid, bid]); return r.affectedRows > 0; },
     async sessGet(sid) { const [r] = await pool.query('SELECT data FROM sessions WHERE sid=? AND exp>?', [sid, Date.now()]); return r[0] ? JSON.parse(r[0].data) : null; },
     async sessSet(sid, data, exp) { await pool.query('INSERT INTO sessions (sid,data,exp) VALUES (?,?,?) ON DUPLICATE KEY UPDATE data=VALUES(data), exp=VALUES(exp)', [sid, JSON.stringify(data), exp]); },
     async sessTouch(sid, exp) { await pool.query('UPDATE sessions SET exp=? WHERE sid=?', [exp, sid]); },
@@ -173,11 +195,23 @@ async function seed(store) {
   await store.addCategory({ id: 'vip', name: 'VIP', groupId: 'exclusif', vipOnly: true, position: 1 });
 }
 
+/* Badges speciaux par defaut (donnes a la main). Crees une seule fois : on peut les modifier ou les supprimer. */
+async function seedBadges(store) {
+  if (await store.setting('badgesSeeded')) return;
+  const base = [
+    ['fondateur', '👑', 'Fondateur', 'A fondé LEGEND', '#ef4444'], ['partenaire', '🤝', 'Partenaire', 'Partenaire officiel', '#14b8a6'],
+    ['bug-hunter', '🐞', 'Chasseur de bugs', 'A signalé un bug important', '#f97316'], ['createur-certifie', '✅', 'Créateur certifié', 'Créateur de confiance, vérifié par l\'équipe', '#22c55e'],
+    ['entraide', '💬', 'Entraide', 'Aide régulièrement la communauté', '#38bdf8']];
+  let p = 1; for (const [id, emoji, name, description, color] of base) await store.addBadge({ id, name, emoji, description, color, position: p++ });
+  await store.setSetting('badgesSeeded', true);
+}
+
 module.exports = async function createStore(dataDir, env = process.env) {
   const cfg = dbConfig(env);
   const store = cfg ? mysqlStore(cfg) : jsonStore(dataDir);
   await store.init();
   await seed(store);
+  await seedBadges(store);
   store.slug = slug;
   return store;
 };

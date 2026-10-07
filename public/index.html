@@ -16,7 +16,7 @@
       <div class="menu"><a href="#/tools/loading-screen"><span>Écran de chargement<small>Crée et exporte ton loading screen</small></span></a><a href="#/tools/banner"><span>Bannière Discord<small>Bannières de serveur animées en GIF</small></span></a></div></div>
     <a href="#/vip" data-r="vip" title="VIP" style="color:var(--vip)"><svg class="ic" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg><span class="lbl">VIP</span></a>
     <div class="dd"><a href="#/regles" data-r="regles" title="À propos"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><span class="lbl">À propos</span><i class="car">▾</i></a>
-      <div class="menu"><a href="#/regles">Règles &amp; signalement</a><a class="dcl" target="_blank" rel="noopener">Discord</a></div></div>
+      <div class="menu"><a href="#/badges">Badges</a><a href="#/regles">Règles &amp; signalement</a><a class="dcl" target="_blank" rel="noopener">Discord</a></div></div>
   </div>
   <div class="nright">
     <button class="btn ghost sm" id="sbtn" title="Rechercher (Ctrl K)"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span class="lbl">Rechercher</span></button>
@@ -49,7 +49,7 @@ const canVip=()=>ME.admin||ME.vip.active;
 async function boot(){
   ME=await j('/api/me').catch(()=>ME); CAT=await j('/api/catalog').catch(()=>CAT);
   $('#auth').innerHTML=ME.user
-   ?`${ME.admin?`<a class="btn ghost sm" href="/admin" title="Admin"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/></svg><span class="lbl">Admin</span></a>`:''}<span class="avw ${ME.vip.active?'vip':''}" title="${ME.vip.active?'Membre VIP':esc(ME.user.name)}">${ME.user.avatar?`<img class="avatar" src="${esc(ME.user.avatar)}" alt="">`:`<span class="avatar ph">${esc((ME.user.name||'?')[0].toUpperCase())}</span>`}${ME.vip.active?'<i class="vstar">★</i>':''}</span><button class="btn ghost sm" id="lo" title="Déconnexion"><svg class="ic" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/></svg><span class="lbl">Quitter</span></button>`
+   ?`${ME.admin?`<a class="btn ghost sm" href="/admin" title="Admin"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/></svg><span class="lbl">Admin</span></a>`:''}<a class="avw ${ME.vip.active?'vip':''}" href="#/membre/${esc(ME.user.id)}" title="${ME.vip.active?'Membre VIP':esc(ME.user.name)}">${ME.user.avatar?`<img class="avatar" src="${esc(ME.user.avatar)}" alt="">`:`<span class="avatar ph">${esc((ME.user.name||'?')[0].toUpperCase())}</span>`}${ME.vip.active?'<i class="vstar">★</i>':''}</a><button class="btn ghost sm" id="lo" title="Déconnexion"><svg class="ic" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/></svg><span class="lbl">Quitter</span></button>`
    :`<a class="btn sm" href="/auth/login" title="Connexion"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span class="lbl">Connexion</span></a>`;
   const logout=async()=>{await fetch('/auth/logout',{method:'POST'});location.reload()};
   const lo=$('#lo');if(lo)lo.onclick=logout;
@@ -133,7 +133,7 @@ async function detail(id){
    <div class="hero-img" id="hi">${r.images[0]?`<img src="/img/${esc(r.images[0])}" alt="">`:''}</div>
    ${r.images.length>1?`<div class="gal">${r.images.map((m,i)=>`<img class="${i?'':'on'}" src="/img/${esc(m)}" alt="">`).join('')}</div>`:''}
    <div class="desc">${esc(r.description)||'<span class="mut">Aucune description.</span>'}</div></div>
-  <aside class="info"><div class="panel"><dl><div><dt>Auteur</dt><dd>${esc(r.authorName)}</dd></div><div><dt>Catégorie</dt><dd>${esc(r.categoryName)}</dd></div>
+  <aside class="info"><div class="panel"><dl><div><dt>Auteur</dt><dd><a href="#/membre/${esc(r.authorId)}" style="text-decoration:underline">${esc(r.authorName)}</a></dd></div><div><dt>Catégorie</dt><dd>${esc(r.categoryName)}</dd></div>
    ${r.version?`<div><dt>Version</dt><dd>${esc(r.version)}</dd></div>`:''}${r.framework?`<div><dt>Framework</dt><dd>${esc(r.framework)}</dd></div>`:''}
    <div><dt>Fichier</dt><dd>${size(r.fileSize)}</dd></div><div><dt>Vues / Téléch.</dt><dd>${r.views} / ${r.downloads}</dd></div><div><dt>Publié</dt><dd>${ago(r.createdAt)}</dd></div></dl>
    <div style="margin-top:16px;display:grid;gap:8px">${dlBtn}${ME.user?'<button class="btn ghost full sm" id="rp">Signaler</button>':''}</div><div id="fl"></div></div></aside></div></div>`;
@@ -207,8 +207,8 @@ async function ranking(period='week'){
   $('#app').innerHTML=`<div class="wrap" style="padding-bottom:90px"><div style="margin:44px 0 0"><div class="eb">Communauté</div><h1 class="t">Classement des créateurs</h1><p class="mut" style="margin-top:8px">Ceux dont les ressources sont les plus téléchargées.</p></div>
    <div class="rk-tabs">${[['week','7 jours'],['month','30 jours'],['all','Depuis toujours']].map(t=>`<button class="rk-tab ${t[0]===period?'on':''}" data-p="${t[0]}">${t[1]}</button>`).join('')}</div>
    ${w?`<div class="wchip"><span>♛</span><span>Gagnant de la semaine dernière :</span><b>${esc(w.name)}</b><span>${w.downloads} ↓</span></div>`:''}
-   ${top.length?`<div class="pod2">${[1,0,2].filter(i=>top[i]).map(i=>{const u=top[i];return `<div class="pcol p${i+1}"><div class="pw">${av(u,i?60:84)}<span class="medal">${i+1}</span></div><h3>${esc(u.name)}${tag(u)}</h3><small>↓ ${u.downloads} · ▣ ${u.resources}</small><div class="ped">${i+1}</div></div>`}).join('')}</div>`:'<p class="empty">Personne au classement pour le moment.</p>'}
-   ${rest.length?`<div class="rlist">${rest.map((u,i)=>`<div class="rrow"><span class="n">#${i+4}</span><div class="who">${av(u,36)}<b>${esc(u.name)}</b>${tag(u)}</div><div class="bar2"><i style="width:${Math.max(3,u.downloads/max*100)}%"></i></div><span class="num">↓ ${u.downloads}</span><span class="num">▣ ${u.resources}</span></div>`).join('')}</div>`:''}</div>`;
+   ${top.length?`<div class="pod2">${[1,0,2].filter(i=>top[i]).map(i=>{const u=top[i];return `<div class="pcol p${i+1}"><div class="pw">${av(u,i?60:84)}<span class="medal">${i+1}</span></div><h3><a href="#/membre/${esc(u.id)}">${esc(u.name)}</a>${tag(u)}</h3><div class="bdgs">${(u.badges||[]).join(' ')}</div><small>↓ ${u.downloads} · ▣ ${u.resources}</small><div class="ped">${i+1}</div></div>`}).join('')}</div>`:'<p class="empty">Personne au classement pour le moment.</p>'}
+   ${rest.length?`<div class="rlist">${rest.map((u,i)=>`<div class="rrow"><span class="n">#${i+4}</span><div class="who">${av(u,36)}<b><a href="#/membre/${esc(u.id)}">${esc(u.name)}</a></b>${tag(u)}<span class="bdgs">${(u.badges||[]).join(' ')}</span></div><div class="bar2"><i style="width:${Math.max(3,u.downloads/max*100)}%"></i></div><span class="num">↓ ${u.downloads}</span><span class="num">▣ ${u.resources}</span></div>`).join('')}</div>`:''}</div>`;
   $$('.rk-tab').forEach(b=>b.onclick=()=>ranking(b.dataset.p));
 }
 
@@ -222,6 +222,27 @@ function vipPage(){
    <p class="mut" style="margin:10px 0 24px">Le VIP donne accès aux ressources marquées ★ : ${vipCats.length?vipCats.map(c=>`<b style="color:var(--vip)">${esc(c.name)}</b>`).join(', '):'catégories exclusives'}. Il est attribué par l'équipe pour une durée limitée ou à vie, et s'arrête automatiquement à la fin de la période.</p>
    ${status}<div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap"><a class="btn vip" href="${DISCORD_URL}" target="_blank" rel="noopener">Demander le VIP sur Discord</a><a class="btn ghost" href="#/ressources">Parcourir</a></div></div>`;
 }
+/* ---------- badges + profils ---------- */
+const bcard=(b,extra)=>`<div class="bcard ${b.locked?'locked':''}" style="--c:${esc(b.color)}"><div class="bem">${esc(b.emoji)}</div><div><b>${esc(b.name)}</b><p>${esc(b.description)}</p><small>${extra||''}</small></div></div>`;
+async function badgesPage(){
+  const d=await j('/api/badges').catch(()=>({badges:[],mine:[]})), mine=new Set(d.mine);
+  const card=b=>bcard({...b,locked:!!ME.user&&!mine.has(b.id)},`${b.holders} membre${b.holders>1?'s':''}${mine.has(b.id)?' · <span class="got">✓ obtenu</span>':''}`);
+  const auto=d.badges.filter(b=>b.auto), sp=d.badges.filter(b=>!b.auto);
+  $('#app').innerHTML=`<div class="wrap" style="padding-bottom:90px"><div style="margin:44px 0 28px"><div class="eb">Communauté</div><h1 class="t">Badges</h1><p class="mut" style="margin-top:8px;max-width:560px">Débloque-les en publiant des ressources et en te faisant télécharger. Les badges spéciaux sont remis par l'équipe.</p></div>
+   <div class="gtitle">À débloquer</div><div class="bgrid space">${auto.map(card).join('')}</div>
+   ${sp.length?`<div class="gtitle">Badges spéciaux</div><div class="bgrid">${sp.map(card).join('')}</div>`:''}</div>`;
+}
+async function profile(id){
+  let m;try{m=await j('/api/members/'+encodeURIComponent(id))}catch{$('#app').innerHTML='<div class="wrap"><p class="empty" style="margin-top:60px">Membre introuvable.</p></div>';return}
+  const av=m.avatar?`<img class="pavatar" src="${esc(m.avatar)}" alt="">`:`<div class="pavatar ph">${esc((m.name||'?')[0].toUpperCase())}</div>`;
+  $('#app').innerHTML=`<div class="wrap" style="padding-bottom:90px"><section class="phead">${av}<div><h1 class="t">${esc(m.name)}</h1><div class="ptags">${m.vip?'<span class="vbadge">★ VIP</span>':''}${m.admin?'<span class="badge2" style="margin:0">ADMIN</span>':''}<span class="mut">Membre depuis ${fdate(m.since)}</span></div></div></section>
+   <div class="stats3" style="margin:26px 0 40px"><div class="stat"><b>${m.stats.resources}</b><span>ressources</span></div><div class="stat"><b>${m.stats.downloads}</b><span>téléchargements</span></div><div class="stat"><b>${m.badges.length}</b><span>badge${m.badges.length>1?'s':''}</span></div></div>
+   <div class="sec"><h2>Badges</h2><a href="#/badges">Tous les badges →</a></div>
+   <div class="bgrid space">${m.badges.length?m.badges.map(b=>bcard(b,b.at?'Obtenu le '+fdate(b.at):'')).join(''):'<p class="empty">Aucun badge pour le moment.</p>'}</div>
+   <div class="sec"><h2>Ressources</h2></div><div class="grid">${m.resources.map(card).join('')||'<p class="empty">Aucune ressource publiée.</p>'}</div></div>`;
+  bind();
+}
+
 function rules(){$('#app').innerHTML=`<div class="up" style="max-width:760px"><h1 class="t">Règles &amp; signalement</h1><div class="panel desc" style="margin-top:22px">Tu ne peux partager que des ressources dont tu es l'auteur, ou dont la licence l'autorise (gratuites, open source).
 Les scripts payants piratés, crackés ou volés sont interdits : ils sont supprimés et leurs auteurs bannis.
 
@@ -252,7 +273,7 @@ $('#sbtn').onclick=openPal;
 function route(){
   const [,a,b,c]=(location.hash||'#/').split('/');scrollTo(0,0);
   $$('#links a[data-r]').forEach(l=>l.classList.toggle('on',l.dataset.r===(a==='r'?'ressources':a||'home')));$('#links').classList.remove('open');
-  ({ressources:()=>list(decodeURIComponent(b||'all'),c||'new'),tools:()=>b==='loading-screen'?loadingScreen():b==='banner'?bannerTool():home(),classement:()=>ranking(),r:()=>detail(b),publier:publish,vip:vipPage,regles:rules}[a]||home)();
+  ({ressources:()=>list(decodeURIComponent(b||'all'),c||'new'),tools:()=>b==='loading-screen'?loadingScreen():b==='banner'?bannerTool():home(),classement:()=>ranking(),badges:badgesPage,membre:()=>profile(decodeURIComponent(b||'')),r:()=>detail(b),publier:publish,vip:vipPage,regles:rules}[a]||home)();
 }
 addEventListener('hashchange',route);
 // la barre du haut se reduit en icones quand on descend (avec une marge pour eviter le clignotement)

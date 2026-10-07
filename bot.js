@@ -25,10 +25,10 @@ const emo = id => EMOJI[id] || '📁';
 const firstEmoji = s => { const m = /^(\p{Extended_Pictographic}️?)/u.exec(s); return m ? m[1] : null; };
 
 module.exports = function startBot(ctx) {
-  const { store, ranking, admins, baseUrl, grantVip, revokeVip, describe, categories, readImage } = ctx;
+  const { store, ranking, admins, baseUrl, grantVip, revokeVip, describe, categories, readImage, badgeCatalogue, memberBadges, evaluateUser, awardBadge, statsOf } = ctx;
   const { DISCORD_BOT_TOKEN: token, DISCORD_GUILD_ID: guildId, DISCORD_CLIENT_ID: clientId } = process.env;
   const noop = async () => {};
-  const off = { enabled: false, resourceAdded: noop, resourceApproved: noop, reportAdded: noop, vipChanged: noop, status: async () => ({ enabled: false }) };
+  const off = { enabled: false, resourceAdded: noop, resourceApproved: noop, reportAdded: noop, vipChanged: noop, badgeAwarded: noop, badgesChanged: noop, status: async () => ({ enabled: false }) };
   if (!token || !guildId) { console.log('Bot Discord desactive (DISCORD_BOT_TOKEN et DISCORD_GUILD_ID non definis).'); return off; }
 
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -179,6 +179,7 @@ module.exports = function startBot(ctx) {
       await send('vipPreview', { embeds: [t], files: tfiles, components: [new ActionRowBuilder().addComponents(link('Devenir VIP', site('/#/vip')))] });
     }
     await giveCreator(r.authorId);
+    if (evaluateUser) evaluateUser(r.authorId).catch(() => {});   // badges d'activite (valable aussi quand l'approbation vient d'un bouton Discord)
   });
 
   const pendingNotice = guard('moderation', async r => {
@@ -225,6 +226,7 @@ module.exports = function startBot(ctx) {
       const wm = await g.members.fetch(list[0].id).catch(() => null); if (wm) await wm.roles.add(role, 'Top de la semaine').catch(() => {});
     }
     await store.setSetting('topWinner', list[0].id);
+    if (awardBadge) await awardBadge(list[0].id, 'top', null, true);   // badge « Top de la semaine »
   });
 
   /* ---------------- patch notes automatiques ----------------
@@ -253,6 +255,39 @@ module.exports = function startBot(ctx) {
     await store.setSetting('patchVersion', notes[0].version);
     return todo.length;
   });
+  /* ---------------- badges ---------------- */
+  const hexInt = c => parseInt(String(c || '#a1a1aa').slice(1), 16) || 0xa1a1aa;
+  async function postBadgeCatalogue() {   // un message de reference (supprime puis republie), les annonces restent en dessous
+    const ch = await chan('badges'); if (!ch || !badgeCatalogue) return;
+    if (S.badgeMsg) { const m = await ch.messages.fetch(S.badgeMsg).catch(() => null); if (m) await m.delete().catch(() => {}); }
+    const list = await badgeCatalogue(), special = list.filter(b => !b.auto), auto = list.filter(b => b.auto);
+    const fmt = b => `${b.emoji} **${cut(b.name, 40)}** — ${cut(b.description, 100)}`;
+    const e = new EmbedBuilder().setColor(ORANGE).setDescription('Les badges se débloquent selon ton activité sur le site, ou sont remis par l\'équipe. Ils s\'affichent sur ton **profil** et dans le **classement**.')
+      .addFields({ name: '🎖️  À débloquer', value: cut(auto.map(fmt).join('\n'), 1024) || '—' }, ...(special.length ? [{ name: '✨  Badges spéciaux', value: cut(special.map(fmt).join('\n'), 1024) }] : []));
+    const files = [], png = cards ? await cards.sectionBanner({ title: 'Badges', subtitle: 'Collectionne-les tous' }).catch(() => null) : null;
+    if (png) { files.push(new AttachmentBuilder(png, { name: 'badges.png' })); e.setImage('attachment://badges.png'); } else e.setTitle('🏅 Badges');
+    const m = await ch.send({ embeds: [e], files, components: [new ActionRowBuilder().addComponents(link('Voir tous les badges', site('/#/badges')))] });
+    S.badgeMsg = m.id; await saveS();
+  }
+  const badgesChanged = guard('badges', async () => { if (ready) await postBadgeCatalogue(); });
+  const badgeAwarded = guard('badge obtenu', async (uid, b) => {
+    const g = await getGuild(), m = await g.members.fetch(uid).catch(() => null), u = !m && ctx.userName ? await ctx.userName(uid) : null;
+    const who = m ? `<@${uid}>` : `**${cut(u || 'Un membre', 40)}**`;
+    const e = new EmbedBuilder().setColor(hexInt(b.color)).setAuthor({ name: 'Nouveau badge', iconURL: site('/logo.png') })
+      .setTitle(`${b.emoji}  ${b.name}`).setDescription(`${who} vient de débloquer un badge !\n\n> ${cut(b.description, 150)}`).setFooter({ text: 'LEGEND · badges' }).setTimestamp();
+    await send('badges', { embeds: [e], components: [new ActionRowBuilder().addComponents(link('Voir le profil', site('/#/membre/' + uid)))], allowedMentions: { users: m ? [uid] : [] } });
+  });
+  async function badgesCommand(i) {    // /badges [membre] : tout le monde peut l'utiliser
+    await i.deferReply();
+    const u = i.options.getUser('membre') || i.user, list = memberBadges ? await memberBadges(u.id) : [], st = statsOf ? await statsOf(u.id) : { resources: 0, downloads: 0 };
+    const icon = u.displayAvatarURL ? u.displayAvatarURL({ extension: 'png', size: 128 }) : '';
+    const e = new EmbedBuilder().setColor(ORANGE).setAuthor({ name: u.globalName || u.username, iconURL: /^https?:\/\//.test(icon || '') ? icon : undefined, url: site('/#/membre/' + u.id) })
+      .setTitle(list.length ? `🏅 ${list.length} badge${list.length > 1 ? 's' : ''}` : '🏅 Aucun badge pour le moment')
+      .setDescription(list.length ? list.map(b => `${b.emoji} **${cut(b.name, 40)}** — ${cut(b.description, 100)}`).join('\n') : 'Publie des ressources et fais-toi télécharger pour en débloquer.')
+      .addFields({ name: 'Ressources', value: String(st.resources), inline: true }, { name: 'Téléchargements', value: String(st.downloads), inline: true });
+    return i.editReply({ embeds: [e], components: [new ActionRowBuilder().addComponents(link('Voir le profil', site('/#/membre/' + u.id)))] });
+  }
+
   /* ---------------- /setup : roles + salons ---------------- */
   const PLAN = [
     { key: 'infos', name: 'INFOS', scope: 'public', ch: [
@@ -264,7 +299,8 @@ module.exports = function startBot(ctx) {
     { key: 'siteweb', name: 'SITE WEB', scope: 'public', ch: [
       { key: 'site', e: '🌐', n: 'site-officiel', ro: true, topic: 'Le site LEGEND : ressources, classement, outils.' },
       { key: 'ranking', e: '🏆', n: 'classement', ro: true, topic: 'Le classement des créateurs, chaque lundi.' },
-      { key: 'patch', e: '🗒️', n: 'patch-notes', ro: true, topic: 'Les mises à jour du site.' }] },
+      { key: 'patch', e: '🗒️', n: 'patch-notes', ro: true, topic: 'Les mises à jour du site.' },
+      { key: 'badges', e: '🏅', n: 'badges', ro: true, topic: 'Les badges du site et ceux que la communauté débloque.' }] },
     { key: 'ressources', name: 'RESSOURCES', scope: 'public', cats: 'public', ch: [
       { key: 'requests', e: '🛠️', n: 'demandes', topic: 'Demande une ressource à la communauté.' }] },
     { key: 'accesVip', name: 'ACCÈS VIP', scope: 'public', ch: [
@@ -356,7 +392,9 @@ module.exports = function startBot(ctx) {
       'Il est attribué par l\'équipe, pour une durée limitée ou à vie, et s\'arrête automatiquement à la fin de la période.',
       '',
       'Un aperçu des dernières nouveautés est dans <#' + (S.channels.vipPreview || '') + '>.'].join('\n')),
-      [new ActionRowBuilder().addComponents(link('Découvrir le VIP', site('/#/vip')))]);    await postRoleMenu(g);
+      [new ActionRowBuilder().addComponents(link('Découvrir le VIP', site('/#/vip')))]);
+    await postBadgeCatalogue().catch(e => console.error('[bot] badges :', e.message));
+    await postRoleMenu(g);
     for (const k of LEGEND_REMOVE()) delete S.channels[k];
     await saveS();
     await postPatchNotes();
@@ -408,6 +446,8 @@ module.exports = function startBot(ctx) {
       .addBooleanOption(o => o.setName('nettoyer').setDescription('Propose ensuite de supprimer les anciens salons et rôles (avec confirmation)')),
     new SlashCommandBuilder().setName('nettoyer').setDescription('Supprime les salons et rôles qui ne font pas partie de LEGEND (avec confirmation)').setDefaultMemberPermissions(P.Administrator).setDMPermission(false)
       .addBooleanOption(o => o.setName('roles').setDescription('Supprimer aussi les anciens rôles (oui par défaut)')),
+    new SlashCommandBuilder().setName('badges').setDescription('Voir les badges d\'un membre').setDMPermission(false)
+      .addUserOption(o => o.setName('membre').setDescription('Le membre (toi par défaut)')),
     new SlashCommandBuilder().setName('patchnotes').setDescription('Republie la dernière mise à jour dans le salon patch-notes').setDefaultMemberPermissions(P.Administrator).setDMPermission(false),
     new SlashCommandBuilder().setName('vip').setDescription('Gérer les membres VIP').setDefaultMemberPermissions(P.Administrator).setDMPermission(false)
       .addSubcommand(s => s.setName('donner').setDescription('Donner ou prolonger le VIP')
@@ -421,6 +461,7 @@ module.exports = function startBot(ctx) {
   client.on(Events.InteractionCreate, async i => {
     try {
       if (i.isChatInputCommand()) {
+        if (i.commandName === 'badges') return badgesCommand(i);   // ouvert a tous les membres
         if (!admins.has(i.user.id)) return i.reply({ content: 'Réservé aux admins du site.', flags: EPHEMERAL });
         if (i.commandName === 'setup') {
           await i.deferReply({ flags: EPHEMERAL });
@@ -502,7 +543,7 @@ module.exports = function startBot(ctx) {
 
   const invite = clientId ? `https://discord.com/oauth2/authorize?client_id=${clientId}&scope=bot%20applications.commands&permissions=8` : null;
   return {
-    enabled: true, resourceAdded, resourceApproved, reportAdded, vipChanged,
+    enabled: true, resourceAdded, resourceApproved, reportAdded, vipChanged, badgeAwarded, badgesChanged,
     status: async () => ({ enabled: true, ready, tag: client.user && client.user.tag, guild: ready ? (await getGuild()).name : null, setupDone: !!S.channels['cat:ressources'], channels: S.channels, roles: S.roles, invite })
   };
 };
