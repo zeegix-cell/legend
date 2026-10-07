@@ -17,6 +17,7 @@ const EPHEMERAL = 64;
 const sizeStr = b => (b > 1048576 ? (b / 1048576).toFixed(1) + ' Mo' : Math.ceil(b / 1024) + ' Ko');
 const cut = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
+const fs = require('fs'), path = require('path');
 const catTitle = n => `• ${n}`;
 const chName = (emoji, n) => `${emoji}・${String(n).toLowerCase().replace(/\s+/g, '-')}`.slice(0, 100);
 const EMOJI = { armes: '🔫', autres: '📁', bases: '🏗️', bundles: '📦', 'loading-screen': '🖥️', mappings: '🗺️', 'pack-graphique': '🎨', scripts: '⚙️', 'template-discord': '💬', ui: '🧩', vehicles: '🚗', vetements: '👕', vip: '⭐' };
@@ -226,6 +227,32 @@ module.exports = function startBot(ctx) {
     await store.setSetting('topWinner', list[0].id);
   });
 
+  /* ---------------- patch notes automatiques ----------------
+     Le fichier patch-notes.json decrit chaque mise a jour (la plus recente en premier).
+     A chaque demarrage, le bot publie les versions plus recentes que la derniere publiee. */
+  const readPatchNotes = () => { try { const a = JSON.parse(fs.readFileSync(path.join(__dirname, 'patch-notes.json'), 'utf8')); return Array.isArray(a) ? a : []; } catch { return []; } };
+  const bullets = list => cut((list || []).map(x => '• ' + String(x)).join('\n'), 1024);
+  async function sendPatch(entry) {
+    const e = new EmbedBuilder().setColor(ORANGE).setAuthor({ name: 'Mise à jour du site', iconURL: site('/logo.png'), url: site('/') })
+      .setTitle(`v${entry.version} · ${cut(entry.title, 200)}`).setURL(site('/'))
+      .setFooter({ text: `LEGEND · ${entry.date || ''}`.trim() }).setTimestamp(entry.date ? new Date(entry.date + 'T12:00:00Z') : new Date());
+    if (entry.summary) e.setDescription(cut(entry.summary, 400));
+    if (entry.new && entry.new.length) e.addFields({ name: '✨  Nouveautés', value: bullets(entry.new) });
+    if (entry.improved && entry.improved.length) e.addFields({ name: '🔧  Améliorations', value: bullets(entry.improved) });
+    if (entry.fixed && entry.fixed.length) e.addFields({ name: '🐛  Corrections', value: bullets(entry.fixed) });
+    const files = [], png = cards ? await cards.sectionBanner({ title: `Mise à jour ${entry.version}`, subtitle: entry.title }).catch(() => null) : null;
+    if (png) { files.push(new AttachmentBuilder(png, { name: 'patch.png' })); e.setImage('attachment://patch.png'); }
+    await send('patch', { embeds: [e], files, components: [new ActionRowBuilder().addComponents(link('Ouvrir le site', site('/')), link('Toutes les ressources', site('/#/ressources')))] });
+  }
+  const postPatchNotes = guard('patch-notes', async force => {
+    const notes = readPatchNotes(); if (!notes.length || !S.channels.patch) return 0;   // pas de salon : on ne marque rien, ce sera publie apres /setup
+    const last = await store.setting('patchVersion'); let todo;
+    if (force || !last) todo = [notes[0]];                                           // 1er demarrage : seulement la plus recente
+    else { const i = notes.findIndex(n => n.version === last); todo = (i === -1 ? [notes[0]] : notes.slice(0, i)).slice(0, 3).reverse(); }
+    for (const n of todo) await sendPatch(n);
+    await store.setSetting('patchVersion', notes[0].version);
+    return todo.length;
+  });
   /* ---------------- /setup : roles + salons ---------------- */
   const PLAN = [
     { key: 'infos', name: 'INFOS', scope: 'public', ch: [
@@ -332,6 +359,7 @@ module.exports = function startBot(ctx) {
       [new ActionRowBuilder().addComponents(link('Découvrir le VIP', site('/#/vip')))]);    await postRoleMenu(g);
     for (const k of LEGEND_REMOVE()) delete S.channels[k];
     await saveS();
+    await postPatchNotes();
     return { made, kept };
   }
   const LEGEND_REMOVE = () => LEGACY.filter(k => S.channels[k]);
@@ -380,6 +408,7 @@ module.exports = function startBot(ctx) {
       .addBooleanOption(o => o.setName('nettoyer').setDescription('Propose ensuite de supprimer les anciens salons et rôles (avec confirmation)')),
     new SlashCommandBuilder().setName('nettoyer').setDescription('Supprime les salons et rôles qui ne font pas partie de LEGEND (avec confirmation)').setDefaultMemberPermissions(P.Administrator).setDMPermission(false)
       .addBooleanOption(o => o.setName('roles').setDescription('Supprimer aussi les anciens rôles (oui par défaut)')),
+    new SlashCommandBuilder().setName('patchnotes').setDescription('Republie la dernière mise à jour dans le salon patch-notes').setDefaultMemberPermissions(P.Administrator).setDMPermission(false),
     new SlashCommandBuilder().setName('vip').setDescription('Gérer les membres VIP').setDefaultMemberPermissions(P.Administrator).setDMPermission(false)
       .addSubcommand(s => s.setName('donner').setDescription('Donner ou prolonger le VIP')
         .addUserOption(o => o.setName('membre').setDescription('Le membre').setRequired(true))
@@ -408,6 +437,12 @@ module.exports = function startBot(ctx) {
           if (!S.channels['cat:ressources']) return i.editReply('Lance d\'abord `/setup` : sans ça, je ne sais pas quels salons garder.');
           const cp = await cleanPrompt(i.guild, i.channelId, i.user.id, optBool(i, 'roles', true));
           return i.editReply(cp.components.length ? { embeds: cp.embeds, components: cp.components } : { content: '✨ Rien à nettoyer : il n\'y a que des éléments LEGEND.' });
+        }
+        if (i.commandName === 'patchnotes') {
+          await i.deferReply({ flags: EPHEMERAL });
+          if (!S.channels.patch) return i.editReply('Lance d\'abord `/setup` : le salon patch-notes n\'existe pas encore.');
+          const n = await postPatchNotes(true);
+          return i.editReply(n ? `✅ Dernière mise à jour republiée dans <#${S.channels.patch}>.` : 'Aucune mise à jour trouvée dans patch-notes.json.');
         }
         if (i.commandName === 'vip') {
           const sub = i.options.getSubcommand(), u = i.options.getUser('membre');
@@ -459,7 +494,7 @@ module.exports = function startBot(ctx) {
       const role = S.roles.vip && g.roles.cache.get(S.roles.vip);
       if (role) for (const v of await store.vips()) if (v.until === null || v.until > Date.now()) { const m = await g.members.fetch(v.userId).catch(() => null); if (m && !m.roles.cache.has(role.id)) await m.roles.add(role, 'Synchronisation VIP').catch(() => {}); }
       ready = true; console.log(`Bot Discord pret : ${client.user.tag} sur « ${g.name} »${S.channels['cat:ressources'] ? '' : ' (tape /setup sur le serveur pour creer les salons)'}`);
-      setInterval(weekly, 30 * 60 * 1000).unref(); weekly();
+      setInterval(weekly, 30 * 60 * 1000).unref(); weekly(); postPatchNotes();
     } catch (e) { console.error('[bot] demarrage :', e.message, '— le bot est-il bien invite sur le serveur ?'); }
   });
   client.on(Events.Error, e => console.error('[bot]', e.message));

@@ -1,0 +1,62 @@
+[
+  {
+    "version": "1.7.0",
+    "date": "2026-10-07",
+    "title": "Annonces illustrées et patch notes automatiques",
+    "new": [
+      "**Cartes d'annonce** : chaque nouvelle ressource est annoncée avec une grande carte (image, titre, catégorie, créateur, badge Gratuit ou VIP)",
+      "**Patch notes automatiques** : chaque mise à jour du site est publiée ici",
+      "**Nouveaux rôles** : Fondateur, Co-Fondateur, Responsable, Développeur, Helper, Partenaire, Membre"
+    ],
+    "improved": [
+      "Salons d'information avec bannières illustrées (règlement, informations, site officiel, VIP)",
+      "Une ressource sans image reçoit maintenant une carte aux couleurs de LEGEND"
+    ],
+    "fixed": [
+      "Barre de navigation : le badge VIP ne la fait plus déborder"
+    ]
+  },
+  {
+    "version": "1.6.0",
+    "date": "2026-10-06",
+    "title": "Bot Discord et rôles de notification",
+    "new": [
+      "**Bot Discord** intégré au site : création automatique des salons et des rôles avec `/setup`",
+      "**Un salon par catégorie** de ressources, avec annonce à chaque ajout",
+      "**Menu de rôles** pour choisir ses notifications, un rôle par catégorie",
+      "**VIP synchronisé** : `/vip donner` et `/vip retirer`, rôle ajouté et retiré automatiquement"
+    ],
+    "improved": [
+      "Modération depuis Discord avec les boutons Valider et Refuser",
+      "`/nettoyer` supprime les anciens salons et rôles après confirmation"
+    ],
+    "fixed": []
+  },
+  {
+    "version": "1.5.0",
+    "date": "2026-10-04",
+    "title": "Passe VIP et catégories personnalisables",
+    "new": [
+      "**Passe VIP** avec durée (7 jours à vie) et expiration automatique",
+      "**Catégories et sur-catégories** créables depuis le panel admin",
+      "**Connexion persistante** : tu restes connecté pendant 1 an"
+    ],
+    "improved": [
+      "Site entièrement adapté aux téléphones",
+      "Barre du haut qui se réduit en icônes quand on défile"
+    ],
+    "fixed": []
+  },
+  {
+    "version": "1.0.0",
+    "date": "2026-09-30",
+    "title": "Lancement de LEGEND",
+    "new": [
+      "Partage de ressources FiveM avec validation par l'équipe",
+      "Connexion avec Discord et classement des créateurs",
+      "Outils gratuits : écran de chargement FiveM et bannières Discord animées"
+    ],
+    "improved": [],
+    "fixed": []
+  }
+]
