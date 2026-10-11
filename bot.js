@@ -12,7 +12,7 @@ const {
 let cards = null;   // images generees (cartes d'annonce et bannieres) ; le bot marche aussi sans
 try { cards = require('./cards'); } catch (e) { console.log('Cartes visuelles desactivees :', e.message); }
 
-const ORANGE = 0xff5a1f, GOLD = 0xf5b942, GREEN = 0x4ade80, RED = 0xf87171, GREY = 0x71717a;
+const ORANGE = 0xcfd5de, GOLD = 0xf5b942, GREEN = 0x4ade80, RED = 0xf87171, GREY = 0x71717a;
 const EPHEMERAL = 64;
 const sizeStr = b => (b > 1048576 ? (b / 1048576).toFixed(1) + ' Mo' : Math.ceil(b / 1024) + ' Ko');
 const cut = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };

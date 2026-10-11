@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LEGEND — Ressources FiveM</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.png" type="image/png"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="theme-color" content="#09090b">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css"></head>
@@ -85,7 +85,7 @@ async function home(){
   const pop=[...RES].sort((a,b)=>b.downloads-a.downloads).slice(0,8), fresh=RES.slice(0,8);
   const dl=RES.reduce((s,r)=>s+r.downloads,0), au=new Set(RES.map(r=>r.authorName)).size;
   $('#app').innerHTML=`<div class="wrap">
-   <section class="hero"><span class="pill"><b>★</b> Accès VIP · contenus exclusifs</span>
+   <section class="hero"><div class="emblem"><img src="/logo-chrome.png" alt="LEGEND" width="512" height="512" fetchpriority="high"></div><span class="pill"><b>★</b> Accès VIP · contenus exclusifs</span>
     <h1 class="big">Les ressources FiveM, <em>en mieux.</em></h1>
     <p class="lead">Scripts, mappings, véhicules et bases partagés par la communauté, vérifiés avant publication.</p>
     <div class="searchbox" id="hs"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>Rechercher une ressource…</span><span class="kbd">Ctrl K</span></div>

@@ -1,7 +1,7 @@
 ﻿<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LEGEND — Admin</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.png" type="image/png">
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css"></head>
 <body>
@@ -115,7 +115,7 @@ async function badges(){
    <div class="gbox"><h3 style="margin-bottom:14px">Créer un badge spécial</h3>
     <div class="grid2"><div class="fld"><label>Emoji (un seul)</label><input id="ne" maxlength="8" placeholder="🏅"></div><div class="fld"><label>Nom</label><input id="nn" maxlength="30" placeholder="Nom du badge"></div></div>
     <div class="fld"><label>Description</label><input id="nd" maxlength="120" placeholder="Pourquoi on le reçoit"></div>
-    <div class="grid2"><div class="fld"><label>Couleur</label><input id="nc" type="color" value="#ff5a1f"></div><div class="fld" style="align-self:end"><button class="btn" id="ncreate" style="width:100%">Créer le badge</button></div></div></div>
+    <div class="grid2"><div class="fld"><label>Couleur</label><input id="nc" type="color" value="#cfd5de"></div><div class="fld" style="align-self:end"><button class="btn" id="ncreate" style="width:100%">Créer le badge</button></div></div></div>
    <h3 style="margin:26px 0 12px">Badges spéciaux (${d.manual.length})</h3>`+
    (d.manual.map(b=>`<div class="gbox"><div class="ghead"><span style="font-size:1.7rem">${esc(b.emoji)}</span><input type="text" data-bn="${esc(b.id)}" value="${esc(b.name)}" maxlength="30" style="max-width:200px"><input type="text" data-bd="${esc(b.id)}" value="${esc(b.description)}" maxlength="120" style="max-width:none;flex:1"><input type="color" data-bc="${esc(b.id)}" value="${esc(b.color)}" style="width:48px;padding:3px"><button class="btn danger sm" data-bdel="${esc(b.id)}">Supprimer</button></div>
      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${b.holders.map(h=>`<span class="tag">${esc(h.name||h.userId)} <a href="#" data-rv="${esc(b.id)}|${esc(h.userId)}" style="color:var(--bad)" title="Retirer">✕</a></span>`).join('')||'<span class="dim" style="font-size:.84rem">Personne pour le moment.</span>'}</div></div>`).join('')||'<p class="dim">Aucun badge spécial.</p>')+

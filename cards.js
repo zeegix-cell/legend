@@ -3,7 +3,7 @@
 const path = require('path');
 const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 
-const ORANGE = '#ff5a1f', GOLD = '#f5b942', GREEN = '#4ade80';
+const ORANGE = '#cfd5de', GOLD = '#f5b942', GREEN = '#4ade80';
 let fontsDone = false, logo = null;
 
 function initFonts() {
@@ -40,12 +40,12 @@ async function getLogo() { if (!logo) logo = await loadImage(path.join(__dirname
 /* fond de marque quand il n'y a pas d'image : quadrillage, halos et filigrane */
 async function brandBackground(c, W, H, accent) {
   c.fillStyle = '#09090b'; c.fillRect(0, 0, W, H);
-  const g1 = c.createRadialGradient(W * 0.86, H * 0.18, 0, W * 0.86, H * 0.18, W * 0.62); g1.addColorStop(0, rgba(accent, 0.55)); g1.addColorStop(1, rgba(accent, 0)); c.fillStyle = g1; c.fillRect(0, 0, W, H);
-  const g2 = c.createRadialGradient(W * 0.05, H * 1.05, 0, W * 0.05, H * 1.05, W * 0.5); g2.addColorStop(0, rgba(accent, 0.22)); g2.addColorStop(1, rgba(accent, 0)); c.fillStyle = g2; c.fillRect(0, 0, W, H);
+  const g1 = c.createRadialGradient(W * 0.86, H * 0.18, 0, W * 0.86, H * 0.18, W * 0.62); g1.addColorStop(0, rgba(accent, accent === GOLD ? 0.55 : 0.34)); g1.addColorStop(1, rgba(accent, 0)); c.fillStyle = g1; c.fillRect(0, 0, W, H);
+  const g2 = c.createRadialGradient(W * 0.05, H * 1.05, 0, W * 0.05, H * 1.05, W * 0.5); g2.addColorStop(0, rgba(accent, accent === GOLD ? 0.22 : 0.14)); g2.addColorStop(1, rgba(accent, 0)); c.fillStyle = g2; c.fillRect(0, 0, W, H);
   c.strokeStyle = 'rgba(255,255,255,.045)'; c.lineWidth = 1;
   for (let x = 0; x <= W; x += 60) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, H); c.stroke(); }
   for (let y = 0; y <= H; y += 60) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
-  const lg = await getLogo(); if (lg) { const s = H * 1.25; c.globalAlpha = 0.07; c.drawImage(lg, W - s * 0.78, H / 2 - s / 2, s, s); c.globalAlpha = 1; }
+  const lg = await getLogo(); if (lg) { const s = H * 1.25; c.globalAlpha = 0.12; c.drawImage(lg, W - s * 0.78, H / 2 - s / 2, s, s); c.globalAlpha = 1; }
 }
 function drawCover(c, img, W, H) { const s = Math.max(W / img.width, H / img.height), w = img.width * s, h = img.height * s; c.drawImage(img, (W - w) / 2, (H - h) / 2, w, h); }
 function brandTag(c, x, y, light) {

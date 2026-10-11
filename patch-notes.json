@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.10.0",
+    "date": "2026-10-11",
+    "title": "Nouvelle identité chrome",
+    "new": [
+      "**Nouveau logo** LEGEND en métal chromé, présent sur le site, l'onglet du navigateur et le serveur Discord",
+      "Thème **argent chromé** sur tout le site : boutons métalliques, titres brillants et halo lumineux au survol des cartes",
+      "Grand emblème animé sur la page d'accueil"
+    ],
+    "improved": [
+      "Les annonces et cartes du bot Discord reprennent les couleurs et le logo chrome",
+      "Icône de l'application mise à jour (favicon et écran d'accueil mobile)"
+    ]
+  },
+  {
     "version": "1.9.0",
     "date": "2026-10-07",
     "title": "Achète ton VIP en crypto",
