@@ -12,7 +12,7 @@ const pay = require('./payments');
 
 const {
   PORT = 3000, BASE_URL = 'http://localhost:3000', SESSION_SECRET,
-  DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, ADMIN_IDS = '', MAX_UPLOAD_MB = '200',
+  DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, ADMIN_IDS = '', MAX_UPLOAD_MB = '1024',
   STORAGE_DIR = __dirname   // dossier des donnees et des fichiers : pointe-le vers un volume persistant
 } = process.env;
 
@@ -196,6 +196,37 @@ createStore(DATA).then(store => {
     }
   }).fields([{ name: 'file', maxCount: 1 }, { name: 'images', maxCount: 5 }]);
 
+  // ---------- Envoi par morceaux : les gros fichiers passent sous la limite de taille des proxys ----------
+  const CHUNK = 8 * 1024 * 1024, TMP = path.join(STORAGE_DIR, 'uploads', 'tmp');
+  fs.mkdirSync(TMP, { recursive: true });
+  fs.readdirSync(TMP).forEach(f => fs.unlink(path.join(TMP, f), () => {}));   // restes d'envois interrompus par un redemarrage
+  const parts = new Map();   // id -> { uid, name, size, path, got:Set, created }
+  const dropPart = id => { const p = parts.get(id); if (p) { parts.delete(id); fs.unlink(p.path, () => {}); } };
+  setInterval(() => { for (const [id, p] of parts) if (Date.now() - p.created > 6 * 36e5) dropPart(id); }, 36e5).unref();
+
+  app.post('/api/upload/init', requireUser, ah(async (req, res) => {
+    const name = String(req.body?.name || ''), size = Number(req.body?.size), uid = req.session.user.id;
+    if (!ARC_EXT.includes(path.extname(name).toLowerCase())) return res.status(400).json({ error: 'Format accepté : .zip, .rar, .7z' });
+    if (!Number.isInteger(size) || size < 1 || size > MAX_UPLOAD_MB * 1048576) return res.status(400).json({ error: `Fichier trop gros (${MAX_UPLOAD_MB} Mo max).` });
+    const mine = [...parts].filter(([, p]) => p.uid === uid).sort((a, b) => a[1].created - b[1].created);
+    while (mine.length >= 3) dropPart(mine.shift()[0]);
+    const id = crypto.randomBytes(12).toString('hex'), file = path.join(TMP, id + '.part');
+    fs.writeFileSync(file, '');
+    parts.set(id, { uid, name, size, path: file, got: new Set(), created: Date.now() });
+    res.json({ id, chunk: CHUNK });
+  }));
+  app.put('/api/upload/:id/:i', requireUser, express.raw({ type: () => true, limit: CHUNK + 1024 }), ah(async (req, res) => {
+    const p = parts.get(req.params.id), i = Number(req.params.i);
+    if (!p || p.uid !== req.session.user.id) return res.status(404).json({ error: 'Envoi introuvable, recommence.' });
+    const n = Math.ceil(p.size / CHUNK);
+    if (!Number.isInteger(i) || i < 0 || i >= n) return res.status(400).json({ error: 'Morceau invalide.' });
+    const want = i < n - 1 ? CHUNK : p.size - i * CHUNK;
+    if (!Buffer.isBuffer(req.body) || req.body.length !== want) return res.status(400).json({ error: 'Morceau incomplet, réessaie.' });
+    const fh = await fs.promises.open(p.path, 'r+');
+    try { await fh.write(req.body, 0, want, i * CHUNK); } finally { await fh.close(); }
+    p.got.add(i); res.json({ received: p.got.size, total: n });
+  }));
+
   const hits = new Map(); // limite : 10 publications / heure / utilisateur
   app.post('/api/resources', requireUser, (req, res) => {
     const now = Date.now(), uid = req.session.user.id;
@@ -204,12 +235,21 @@ createStore(DATA).then(store => {
     upload(req, res, async err => {
       const cleanup = () => Object.values(req.files || {}).flat().forEach(f => fs.unlink(f.path, () => {}));
       if (err) { cleanup(); return res.status(400).json({ error: err.message }); }
+      let moved = null;
       try {
-        const b = req.body, file = req.files?.file?.[0], cat = (await store.categories()).find(c => c.id === b.category);
-        if (!file || !b.title || b.title.length > 180 || !cat || b.rights !== 'true') {
+        const b = req.body, cat = (await store.categories()).find(c => c.id === b.category);
+        let file = req.files?.file?.[0];
+        const part = !file && b.uploadId ? parts.get(String(b.uploadId)) : null;
+        if (part && (part.uid !== uid || part.got.size !== Math.ceil(part.size / CHUNK))) { cleanup(); return res.status(400).json({ error: 'Envoi de l\'archive incomplet, réessaie.' }); }
+        if (!(file || part) || !b.title || b.title.length > 180 || !cat || b.rights !== 'true') {
           cleanup(); return res.status(400).json({ error: 'Champs invalides (titre, categorie, archive, confirmation des droits).' });
         }
         if (cat.vipOnly && !isAdmin(req)) { cleanup(); return res.status(403).json({ error: 'Seuls les admins publient dans une categorie VIP.' }); }
+        if (part) {   // l'archive envoyee par morceaux rejoint le dossier des archives (jamais servi en statique)
+          const fn = crypto.randomBytes(16).toString('hex') + path.extname(part.name).toLowerCase();
+          await fs.promises.rename(part.path, path.join(FILES, fn)); parts.delete(String(b.uploadId));
+          file = { filename: fn, originalname: part.name, size: part.size }; moved = path.join(FILES, fn);
+        }
         const item = {
           id: crypto.randomUUID(), title: b.title.trim(), description: String(b.description || '').slice(0, 5000),
           category: cat.id, version: String(b.version || '').slice(0, 20), framework: String(b.framework || '').slice(0, 30),
@@ -223,7 +263,7 @@ createStore(DATA).then(store => {
         if (item.status === 'approved') evalSoon(uid);
         hits.set(uid, [...recent, now]);
         res.json({ id: item.id, status: item.status });
-      } catch (e) { console.error(e); cleanup(); res.status(500).json({ error: 'Erreur serveur.' }); }
+      } catch (e) { console.error(e); cleanup(); if (moved) fs.unlink(moved, () => {}); res.status(500).json({ error: 'Erreur serveur.' }); }
     });
   });
 

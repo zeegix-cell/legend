@@ -159,14 +159,14 @@ function publish(){
     <div class="fld"><label>Description</label><textarea id="d" maxlength="5000" placeholder="Ce que contient la ressource, les prérequis…">${esc(S.description)}</textarea></div>${nav()}`;
    if(S.step===1)f.innerHTML=`<h3>Visuels</h3><p class="sub">Jusqu'à 5 images (PNG, JPG, WEBP). La première sert de couverture.</p><div class="drop" id="dz">Clique ou glisse tes images ici</div><input type="file" id="fi" accept="image/png,image/jpeg,image/webp" multiple hidden>
     <div class="previews">${S.images.map((m,i)=>`<div><img src="${m.url}"><button data-i="${i}">×</button></div>`).join('')}</div>${nav()}`;
-   if(S.step===2)f.innerHTML=`<h3>Fichier</h3><p class="sub">Archive .zip, .rar ou .7z (200 Mo max).</p><div class="drop" id="dz">Clique ou glisse ton archive ici</div><input type="file" id="fi" accept=".zip,.rar,.7z" hidden>
+   if(S.step===2)f.innerHTML=`<h3>Fichier</h3><p class="sub">Archive .zip, .rar ou .7z (1 Go max).</p><div class="drop" id="dz">Clique ou glisse ton archive ici</div><input type="file" id="fi" accept=".zip,.rar,.7z" hidden>
     ${S.file?`<div class="fileok"><span>📦 ${esc(S.file.name)} — ${size(S.file.size)}</span><button class="btn ghost sm" id="rm">Retirer</button></div>`:''}${nav()}`;
    if(S.step===3){
     f.innerHTML=`<h3>Catégorie</h3><p class="sub">Choisis où ranger ta ressource.</p>
     ${CAT.groups.map(g=>{const cs=g.categories.filter(c=>!c.vipOnly||ME.admin);return cs.length?`<div class="gtitle">${esc(g.name)}</div><div class="cgrid">${cs.map(c=>`<div class="cpick ${c.vipOnly?'v':''} ${S.category===c.id?'on':''}" data-c="${esc(c.id)}">${c.vipOnly?'★ ':''}${esc(c.name)}</div>`).join('')}</div>`:''}).join('')}
     <div class="grid2" style="margin-top:14px"><div class="fld"><label>Version</label><input id="v" value="${esc(S.version)}" placeholder="1.0.0"></div><div class="fld"><label>Framework</label><select id="fw"><option value="">—</option>${['ESX','QBCore','Standalone'].map(x=>`<option ${S.framework===x?'selected':''}>${x}</option>`).join('')}</select></div></div>
     <label class="check"><input type="checkbox" id="rt" ${S.rights?'checked':''}><span>Je certifie être l'auteur de cette ressource ou avoir le droit de la partager. Les ressources payantes piratées ou volées sont interdites et seront supprimées.</span></label>
-    <div class="prog" id="pg" hidden><i></i></div>${nav(true)}`;}
+    <div class="prog" id="pg" hidden><i></i></div><p class="dim" id="pgt" hidden style="font-size:.8rem;margin-top:8px">0 %</p>${nav(true)}`;}
    wire();
   };
   const wire=()=>{
@@ -183,15 +183,36 @@ function publish(){
   const take=files=>{
    if(S.step===1){for(const f of files){if(S.images.length>=5)break;if(/^image\/(png|jpe?g|webp)$/.test(f.type)&&f.size<8e6)S.images.push({file:f,url:URL.createObjectURL(f)})}}
    else{const f=files[0];if(f&&/\.(zip|rar|7z)$/i.test(f.name))S.file=f;else err('Format accepté : .zip, .rar, .7z')}view()};
-  const go=()=>{save();err('');
+  // l'archive part par morceaux de 8 Mo (nouvelle tentative automatique) : les gros fichiers passent derriere n'importe quel proxy
+  const sendFile=async()=>{
+   if(S.uploadId&&S.uploadFor===S.file)return S.uploadId;
+   const r=await fetch('/api/upload/init',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:S.file.name,size:S.file.size})});
+   const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"Échec de l'envoi");
+   const CH=j.chunk,n=Math.ceil(S.file.size/CH);
+   for(let i=0;i<n;i++){
+    let ok=false;
+    for(let t=0;t<4&&!ok;t++){
+     try{
+      const rr=await fetch(`/api/upload/${j.id}/${i}`,{method:'PUT',headers:{'content-type':'application/octet-stream'},body:S.file.slice(i*CH,(i+1)*CH)});
+      if(!rr.ok){const e=await rr.json().catch(()=>({}));const x=new Error(e.error||"Échec de l'envoi");x.fatal=rr.status===404||rr.status===401;throw x}
+      ok=true;
+     }catch(e){if(e.fatal)throw e;await new Promise(z=>setTimeout(z,900*(t+1)))}
+    }
+    if(!ok)throw new Error("Connexion perdue pendant l'envoi, réessaie.");
+    $('#pg i').style.width=((i+1)/n*96)+'%';$('#pgt').textContent=Math.round((i+1)/n*100)+' %';
+   }
+   S.uploadId=j.id;S.uploadFor=S.file;return j.id};
+  const go=async()=>{save();err('');
    if(S.step===0&&!S.title.trim())return err('Le titre est obligatoire.');
    if(S.step===2&&!S.file)return err('Ajoute une archive.');
    if(S.step<3){S.step++;return view()}
    if(!S.category)return err('Choisis une catégorie.');if(!S.rights)return err('Tu dois confirmer tes droits sur la ressource.');
-   const fd=new FormData();['title','description','category','version','framework'].forEach(k=>fd.append(k,S[k]));fd.append('rights','true');fd.append('file',S.file);S.images.forEach(m=>fd.append('images',m.file));
-   const x=new XMLHttpRequest();x.open('POST','/api/resources');$('#nx').disabled=true;$('#pg').hidden=false;
-   x.upload.onprogress=e=>$('#pg i').style.width=(e.loaded/e.total*100)+'%';
+   $('#nx').disabled=true;$('#pg').hidden=false;$('#pgt').hidden=false;
+   let up;try{up=await sendFile()}catch(e){$('#nx').disabled=false;$('#pgt').hidden=true;return err(e.message)}
+   const fd=new FormData();['title','description','category','version','framework'].forEach(k=>fd.append(k,S[k]));fd.append('rights','true');fd.append('uploadId',up);S.images.forEach(m=>fd.append('images',m.file));
+   const x=new XMLHttpRequest();x.open('POST','/api/resources');
    x.onload=()=>{let d={};try{d=JSON.parse(x.responseText)}catch{}
+    if(x.status===400&&/incomplet/.test(d.error||''))S.uploadId=null;
     if(x.status===200)$('#app').innerHTML=`<div class="up" style="text-align:center"><h1 class="t">${d.status==='approved'?'Ressource publiée !':'Merci !'}</h1><p class="mut" style="margin:14px 0 24px">${d.status==='approved'?'Elle est en ligne.':'Elle sera visible après validation par un admin.'}</p><a class="btn" href="#/">Retour à l'accueil</a></div>`;
     else{$('#nx').disabled=false;err(d.error||"Échec de l'envoi")}};
    x.onerror=()=>{$('#nx').disabled=false;err('Erreur réseau.')};x.send(fd)};

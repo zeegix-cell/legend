@@ -1,5 +1,17 @@
 [
   {
+    "version": "1.10.1",
+    "date": "2026-10-11",
+    "title": "Envoi des gros fichiers",
+    "new": [
+      "**Archives jusqu'à 1 Go** : les grosses bases et packs se publient maintenant sans échec",
+      "Envoi **par morceaux** avec pourcentage de progression et reprise automatique en cas de coupure"
+    ],
+    "improved": [
+      "Messages d'erreur plus clairs pendant l'envoi"
+    ]
+  },
+  {
     "version": "1.10.0",
     "date": "2026-10-11",
     "title": "Nouvelle identité chrome",
