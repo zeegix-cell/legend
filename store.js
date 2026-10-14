@@ -65,6 +65,12 @@ function jsonStore(dir) {
     async removeBadge(id) { wr('badges', rd('badges').filter(b => b.id !== id)); wr('user_badges', rd('user_badges').filter(x => x.badgeId !== id)); },
     async userBadges(uid) { return rd('user_badges').filter(x => x.userId === uid); },
     async allUserBadges() { return rd('user_badges'); },
+    // favoris
+    async favs(uid) { return (rd('favorites', {})[uid] || []).slice().reverse(); },
+    async setFav(uid, rid, on) { const m = rd('favorites', {}), l = new Set(m[uid] || []); on ? l.add(rid) : l.delete(rid); m[uid] = [...l]; wr('favorites', m); },
+    // parrainage (un filleul = un seul parrain, une seule fois)
+    async addReferral(r) { const l = rd('referrals'); if (l.some(x => x.refereeId === r.refereeId)) return false; l.push(r); wr('referrals', l); return true; },
+    async referralsBy(uid) { return rd('referrals').filter(x => x.referrerId === uid).sort((a, b) => b.createdAt - a.createdAt); },
     async grantBadge(g) { const l = rd('user_badges'); if (l.some(x => x.userId === g.userId && x.badgeId === g.badgeId)) return false; l.push(g); wr('user_badges', l); return true; },
     async revokeBadge(uid, bid) { const l = rd('user_badges'), n = l.length; wr('user_badges', l.filter(x => !(x.userId === uid && x.badgeId === bid))); return l.length !== n; },
     // commandes (paiements VIP)
@@ -117,6 +123,8 @@ function mysqlStore(cfg) {
       await q(`CREATE TABLE IF NOT EXISTS badges (id VARCHAR(40) PRIMARY KEY, name VARCHAR(40) NOT NULL, emoji VARCHAR(16), description VARCHAR(200), color VARCHAR(7), position INT NOT NULL DEFAULT 0) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS user_badges (userId VARCHAR(32) NOT NULL, badgeId VARCHAR(40) NOT NULL, at BIGINT, grantedBy VARCHAR(100), auto TINYINT(1) NOT NULL DEFAULT 0, PRIMARY KEY (userId, badgeId), INDEX (badgeId)) ${T}`);
       await q('ALTER TABLE users ADD COLUMN firstSeen BIGINT NULL').catch(() => {});   // deja presente apres le 1er demarrage
+      await q(`CREATE TABLE IF NOT EXISTS favorites (userId VARCHAR(32) NOT NULL, resourceId VARCHAR(36) NOT NULL, at BIGINT NOT NULL, PRIMARY KEY (userId, resourceId)) ${T}`);
+      await q(`CREATE TABLE IF NOT EXISTS referrals (refereeId VARCHAR(32) PRIMARY KEY, referrerId VARCHAR(32) NOT NULL, refereeName VARCHAR(100), createdAt BIGINT NOT NULL, referrerDays INT NOT NULL DEFAULT 0, refereeDays INT NOT NULL DEFAULT 0, INDEX (referrerId)) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS orders (id VARCHAR(36) PRIMARY KEY, userId VARCHAR(32) NOT NULL, userName VARCHAR(100), planId VARCHAR(20), label VARCHAR(40), days INT NULL, amount DECIMAL(10,2) NOT NULL, currency VARCHAR(8), provider VARCHAR(20), providerRef VARCHAR(80), status VARCHAR(12) NOT NULL, createdAt BIGINT NOT NULL, paidAt BIGINT NULL, INDEX (userId), INDEX (createdAt)) ${T}`);
     },
     async resources() { const [rows] = await pool.query('SELECT * FROM resources ORDER BY createdAt DESC'); return rows.map(toR); },
@@ -169,6 +177,10 @@ function mysqlStore(cfg) {
     async removeBadge(id) { await pool.query('DELETE FROM user_badges WHERE badgeId=?', [id]); await pool.query('DELETE FROM badges WHERE id=?', [id]); },
     async userBadges(uid) { const [r] = await pool.query('SELECT * FROM user_badges WHERE userId=?', [uid]); return r.map(x => ({ ...x, at: num(x.at), auto: !!x.auto })); },
     async allUserBadges() { const [r] = await pool.query('SELECT * FROM user_badges'); return r.map(x => ({ ...x, at: num(x.at), auto: !!x.auto })); },
+    async favs(uid) { const [r] = await pool.query('SELECT resourceId FROM favorites WHERE userId=? ORDER BY at DESC', [uid]); return r.map(x => x.resourceId); },
+    async setFav(uid, rid, on) { if (on) await pool.query('INSERT IGNORE INTO favorites (userId,resourceId,at) VALUES (?,?,?)', [uid, rid, Date.now()]); else await pool.query('DELETE FROM favorites WHERE userId=? AND resourceId=?', [uid, rid]); },
+    async addReferral(x) { const [r] = await pool.query('INSERT IGNORE INTO referrals (refereeId,referrerId,refereeName,createdAt,referrerDays,refereeDays) VALUES (?,?,?,?,?,?)', [x.refereeId, x.referrerId, x.refereeName, x.createdAt, x.referrerDays, x.refereeDays]); return r.affectedRows > 0; },
+    async referralsBy(uid) { const [r] = await pool.query('SELECT * FROM referrals WHERE referrerId=? ORDER BY createdAt DESC', [uid]); return r.map(x => ({ ...x, createdAt: Number(x.createdAt) })); },
     async grantBadge(g) { const [r] = await pool.query('INSERT IGNORE INTO user_badges (userId,badgeId,at,grantedBy,auto) VALUES (?,?,?,?,?)', [g.userId, g.badgeId, g.at, g.grantedBy, g.auto ? 1 : 0]); return r.affectedRows > 0; },
     async revokeBadge(uid, bid) { const [r] = await pool.query('DELETE FROM user_badges WHERE userId=? AND badgeId=?', [uid, bid]); return r.affectedRows > 0; },
     async addOrder(o) { await pool.query('INSERT INTO orders (id,userId,userName,planId,label,days,amount,currency,provider,providerRef,status,createdAt,paidAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', [o.id, o.userId, o.userName, o.planId, o.label, o.days, o.amount, o.currency, o.provider, o.providerRef || null, o.status, o.createdAt, o.paidAt || null]); },

@@ -135,7 +135,7 @@ async function badges(){
 
 /* ---- Paiements ---- */
 async function payments(){
-  const d=await api('/api/admin/pay'), eur=n=>Number(n).toFixed(2).replace('.',',')+' €';
+  const d=await api('/api/admin/pay'), rf=await api('/api/admin/referral'), eur=n=>Number(n).toFixed(2).replace('.',',')+' €';
   const ST={pending:'En attente',partial:'Incomplet',paid:'Payée',failed:'Échouée',expired:'Expirée',refunded:'Remboursée'};
   const cls=s=>s==='paid'?'approved':(s==='pending'||s==='partial')?'pending':'rejected';
   $('#box').innerHTML=`<div class="gbox"><h3 style="margin-bottom:12px">Paiement crypto (NOWPayments)</h3>
@@ -145,10 +145,16 @@ async function payments(){
    <h3 style="margin:22px 0 6px">Formules du VIP</h3><p class="dim" style="font-size:.84rem;margin-bottom:12px">Une formule n'est proposée sur le site que si elle est <b>activée</b> et que son prix est supérieur à 0.</p>
    <div class="gbox">${d.plans.map(p=>`<div class="crow" style="border-top:0"><input type="text" data-pl="${esc(p.id)}" value="${esc(p.label)}" maxlength="30" style="max-width:170px"><span class="dim" style="min-width:90px;font-size:.8rem">${p.days?p.days+' jours':'à vie'}</span><input type="number" step="0.01" min="0" data-pp="${esc(p.id)}" value="${p.price}" style="max-width:110px"><span class="dim">€</span><label><input type="checkbox" data-pe="${esc(p.id)}" ${p.enabled?'checked':''}> Activée</label></div>`).join('')}
     <button class="btn sm" id="psave" style="margin-top:12px">Enregistrer les formules</button></div>
+   <h3 style="margin:22px 0 6px">Parrainage</h3><p class="dim" style="font-size:.84rem;margin-bottom:12px">Un nouveau membre qui s'inscrit avec le lien d'un autre gagne du VIP, et son parrain aussi. Compte Discord de plus de 7 jours exigé.</p>
+   <div class="gbox"><label class="check" style="margin:0 0 12px"><input type="checkbox" id="rfe" ${rf.enabled?'checked':''}> <span>Parrainage activé</span></label>
+    <div class="grid2"><div class="fld"><label>Jours de VIP pour le filleul</label><input type="number" min="0" max="365" id="rfa" value="${rf.refereeDays}"></div><div class="fld"><label>Jours de VIP pour le parrain</label><input type="number" min="0" max="365" id="rfb" value="${rf.referrerDays}"></div></div>
+    <div class="fld" style="max-width:260px"><label>Parrainages récompensés par membre (max)</label><input type="number" min="0" max="1000" id="rfm" value="${rf.max}"></div>
+    <button class="btn sm" id="rfs">Enregistrer le parrainage</button></div>
    <h3 style="margin:22px 0 12px">Commandes (${d.orders.length})</h3>`+
    (d.orders.map(o=>`<div class="row"><div><b>${esc(o.userName)}</b> <span class="dim mono" style="font-size:.74rem">${esc(o.userId)}</span><div class="dim" style="font-size:.8rem">VIP · ${esc(o.label)} · ${eur(o.amount)} · ${new Date(o.createdAt).toLocaleString('fr-FR')} · <span class="tag ${cls(o.status)}">${ST[o.status]||esc(o.status)}</span></div></div>
     <div class="acts">${o.status!=='paid'&&o.status!=='refunded'?`<button class="btn sm" data-paid="${esc(o.id)}">Valider (VIP offert)</button>`:''}${o.status==='paid'?`<button class="btn danger sm" data-refund="${esc(o.id)}">Marquer remboursée</button>`:''}</div></div>`).join('')||'<p class="dim">Aucune commande pour le moment.</p>');
   $('#psave').onclick=async()=>{try{await api('/api/admin/vip-plans','PUT',{plans:d.plans.map(p=>({id:p.id,label:$(`[data-pl="${p.id}"]`).value,price:parseFloat($(`[data-pp="${p.id}"]`).value)||0,enabled:$(`[data-pe="${p.id}"]`).checked}))});payments()}catch(e){fail(e)}};
+  $('#rfs').onclick=async()=>{try{await api('/api/admin/referral','PUT',{enabled:$('#rfe').checked,refereeDays:+$('#rfa').value,referrerDays:+$('#rfb').value,max:+$('#rfm').value});$('#rfs').textContent='✓ Enregistré';setTimeout(()=>{const b=$('#rfs');if(b)b.textContent='Enregistrer le parrainage'},1600)}catch(e){fail(e)}};
   $$('[data-paid]').forEach(b=>b.onclick=async()=>{if(!confirm('Marquer cette commande comme payée et donner le VIP au membre ?'))return;try{await api(`/api/admin/orders/${b.dataset.paid}/mark-paid`,'POST',{});payments()}catch(e){fail(e)}});
   $$('[data-refund]').forEach(b=>b.onclick=async()=>{if(!confirm('Marquer comme remboursée ? (Retire le VIP à la main dans l\'onglet VIP si besoin.)'))return;try{await api(`/api/admin/orders/${b.dataset.refund}/status`,'POST',{status:'refunded'});payments()}catch(e){fail(e)}});
 }

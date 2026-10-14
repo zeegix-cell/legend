@@ -112,6 +112,29 @@ createStore(DATA).then(store => {
     return new Map(uids.map(u => [u, badgeLib.sortForDisplay(by.get(u) || [], manual).slice(0, 4).map(id => defs.get(id) && defs.get(id).emoji).filter(Boolean)]));
   };
 
+  // ---------- Parrainage : un lien d'invitation, quelques jours de VIP pour les deux ----------
+  const REF_DEFAULT = { enabled: true, referrerDays: 3, refereeDays: 3, max: 10 };
+  const refCfg = async () => ({ ...REF_DEFAULT, ...((await store.setting('referral')) || {}) });
+  const codeOf = uid => { try { return BigInt(uid).toString(36); } catch { return null; } };                  // code = identifiant Discord en base 36
+  const uidOf = code => { try { let n = 0n; for (const ch of code) { const d = parseInt(ch, 36); if (Number.isNaN(d)) return null; n = n * 36n + BigInt(d); } return n.toString(); } catch { return null; } };
+  const accountAge = uid => Date.now() - (Number(BigInt(uid) >> 22n) + 1420070400000);                        // age du compte Discord (date dans l'identifiant)
+  const applyReferral = async (user, code, existed) => {
+    const cfg = await refCfg();
+    if (!cfg.enabled || existed || !/^[0-9a-z]{1,13}$/.test(code || '')) return;
+    const referrerId = uidOf(code);
+    if (!referrerId || referrerId === user.id || !(await store.user(referrerId))) return;
+    if (accountAge(user.id) < 7 * 864e5) return;                                                               // comptes Discord tout neufs : pas de bonus (anti-faux comptes)
+    const full = (await store.referralsBy(referrerId)).length >= cfg.max;
+    const rec = { refereeId: user.id, referrerId, refereeName: user.name, createdAt: Date.now(), referrerDays: full ? 0 : cfg.referrerDays, refereeDays: cfg.refereeDays };
+    if (!(await store.addReferral(rec))) return;                                                               // atomique : un seul parrain par membre
+    if (rec.refereeDays > 0) await grantVip(user.id, rec.refereeDays, 'Parrainage');
+    if (rec.referrerDays > 0) await grantVip(referrerId, rec.referrerDays, 'Parrainage');
+  };
+  app.get('/r/:code', (req, res) => {
+    if (!req.session.user && /^[0-9a-z]{1,13}$/.test(req.params.code)) req.session.ref = req.params.code;
+    res.redirect('/');
+  });
+
   // ---------- Discord OAuth2 ----------
   app.get('/auth/login', (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
@@ -135,8 +158,10 @@ createStore(DATA).then(store => {
         id: u.id, name: u.global_name || u.username,
         avatar: u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=128` : null
       };
+      const existed = !!(await store.user(user.id)), ref = req.session.ref;
       await store.upsertUser({ ...user, lastLogin: Date.now() });
       evalSoon(user.id);
+      if (ref) applyReferral(user, ref, existed).catch(e => console.error('[parrainage]', e.message));
       req.session.regenerate(err => {
         if (err) return res.status(500).send('Connexion impossible.');
         req.session.user = user;
@@ -179,6 +204,34 @@ createStore(DATA).then(store => {
     if (!r || (r.status !== 'approved' && !isAdmin(req) && r.authorId !== req.session.user?.id)) return res.status(404).json({ error: 'not found' });
     if (r.status === 'approved') { await store.bump(r.id, 'views'); r.views++; }
     res.json(pub(r, await store.categories()));
+  }));
+
+  // ---------- Favoris ----------
+  app.get('/api/favorites', requireUser, ah(async (req, res) => res.json(await store.favs(req.session.user.id))));
+  app.get('/api/favorites/resources', requireUser, ah(async (req, res) => {
+    const [ids, list, cats] = await Promise.all([store.favs(req.session.user.id), store.resources(), store.categories()]), by = new Map(list.filter(r => r.status === 'approved').map(r => [r.id, r]));
+    res.json(ids.map(id => by.get(id)).filter(Boolean).map(r => pub(r, cats)));
+  }));
+  app.post('/api/favorites/:id', requireUser, ah(async (req, res) => {
+    const uid = req.session.user.id, on = req.body?.on !== false, r = await store.resource(req.params.id);
+    if (on) {
+      if (!r || r.status !== 'approved') return res.status(404).json({ error: 'Ressource introuvable.' });
+      const cur = await store.favs(uid); if (!cur.includes(r.id) && cur.length >= 500) return res.status(400).json({ error: 'Limite de 500 favoris atteinte.' });
+    }
+    await store.setFav(uid, String(req.params.id), on); res.json({ on });
+  }));
+
+  // ---------- Parrainage : page du membre + reglages admin ----------
+  app.get('/api/referral', requireUser, ah(async (req, res) => {
+    const uid = req.session.user.id, [cfg, list] = await Promise.all([refCfg(), store.referralsBy(uid)]), code = codeOf(uid);
+    res.json({ enabled: cfg.enabled, code, link: `${BASE_URL}/r/${code}`, referrerDays: cfg.referrerDays, refereeDays: cfg.refereeDays, max: cfg.max, count: list.length,
+      daysEarned: list.reduce((s, x) => s + (x.referrerDays || 0), 0), invited: list.slice(0, 30).map(x => ({ name: x.refereeName, at: x.createdAt, days: x.referrerDays })) });
+  }));
+  app.get('/api/admin/referral', requireAdmin, ah(async (req, res) => res.json(await refCfg())));
+  app.put('/api/admin/referral', requireAdmin, ah(async (req, res) => {
+    const b = req.body || {}, n = (v, max) => Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
+    const cfg = { enabled: !!b.enabled, referrerDays: n(b.referrerDays, 365), refereeDays: n(b.refereeDays, 365), max: n(b.max, 1000) };
+    await store.setSetting('referral', cfg); res.json(cfg);
   }));
 
   const IMG_EXT = ['.png', '.jpg', '.jpeg', '.webp'];

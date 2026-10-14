@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.11.0",
+    "date": "2026-10-14",
+    "title": "Favoris et parrainage",
+    "new": [
+      "**Favoris** : clique sur le ♥ d'une ressource pour la garder de côté, retrouve-les dans la page « Mes favoris »",
+      "**Parrainage** : récupère ton lien d'invitation, et gagne des jours de **VIP gratuits** (toi et ton ami) à chaque inscription",
+      "Page de parrainage avec tes statistiques et la liste de tes filleuls"
+    ],
+    "improved": [
+      "Bouton « Ajouter aux favoris » sur la page de chaque ressource",
+      "Rappel du parrainage sur la page VIP"
+    ]
+  },
+  {
     "version": "1.10.1",
     "date": "2026-10-11",
     "title": "Envoi des gros fichiers",
