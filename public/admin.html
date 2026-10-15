@@ -9,7 +9,7 @@
 <div class="nright" style="margin-left:auto"><a class="btn ghost sm" href="/">Site</a><button class="btn ghost sm" id="lo">Quitter</button></div></div></nav>
 <main class="wrap" style="padding:40px 24px 90px;max-width:940px">
   <div class="eb">Administration</div><h1 class="t" style="margin-bottom:22px">Panel admin</h1>
-  <div class="tabs" id="tabs"><button class="tab on" data-t="mod">Modération</button><button class="tab" data-t="cats">Catégories</button><button class="tab" data-t="vip">VIP</button><button class="tab" data-t="badges">Badges</button><button class="tab" data-t="payments">Paiements</button><button class="tab" data-t="rep">Signalements</button><button class="tab" data-t="bot">Discord</button></div>
+  <div class="tabs" id="tabs"><button class="tab on" data-t="mod">Modération</button><button class="tab" data-t="cats">Catégories</button><button class="tab" data-t="vip">VIP</button><button class="tab" data-t="badges">Badges</button><button class="tab" data-t="payments">Paiements</button><button class="tab" data-t="reviews">Avis</button><button class="tab" data-t="rep">Signalements</button><button class="tab" data-t="bot">Discord</button></div>
   <div id="box"></div>
 </main>
 <script src="/ui.js"></script>
@@ -159,7 +159,20 @@ async function payments(){
   $$('[data-refund]').forEach(b=>b.onclick=async()=>{if(!confirm('Marquer comme remboursée ? (Retire le VIP à la main dans l\'onglet VIP si besoin.)'))return;try{await api(`/api/admin/orders/${b.dataset.refund}/status`,'POST',{status:'refunded'});payments()}catch(e){fail(e)}});
 }
 
-const views={mod,cats,vip,badges,payments,rep,bot};
+/* ---- Avis ---- */
+async function reviews(){
+  const d=await api('/api/admin/reviews');
+  const row=(v,fl)=>`<div class="row"><div style="min-width:0"><b>${esc(v.userName)}</b> <span class="dim" style="font-size:.78rem">sur</span> <a href="/#/r/${esc(v.resourceId)}" target="_blank" style="text-decoration:underline">${esc(v.resourceTitle)}</a> <span class="tag ${fl?'rejected':''}">${'★'.repeat(v.rating)}${'☆'.repeat(5-v.rating)}</span>${fl?` <span class="tag rejected">${v.flags} signalement${v.flags>1?'s':''}</span>`:''}
+    <div class="dim" style="font-size:.84rem;margin-top:4px;white-space:pre-wrap;word-break:break-word">${esc(v.text)||'(sans commentaire)'}</div></div>
+    <div class="acts">${fl?`<button class="btn ghost sm" data-ok="${esc(v.id)}">Ignorer</button>`:''}<button class="btn danger sm" data-rm="${esc(v.id)}">Supprimer</button></div></div>`;
+  $('#box').innerHTML=`<h3 style="margin-bottom:6px">Avis signalés (${d.flagged.length})</h3><p class="dim" style="font-size:.84rem;margin-bottom:12px">Signalés par des membres. « Ignorer » garde l'avis, « Supprimer » le retire définitivement.</p>
+   ${d.flagged.map(v=>row(v,true)).join('')||'<p class="dim">Aucun avis signalé.</p>'}
+   <h3 style="margin:26px 0 12px">Derniers avis</h3>${d.recent.map(v=>row(v,false)).join('')||'<p class="dim">Aucun avis pour le moment.</p>'}`;
+  $$('[data-ok]').forEach(b=>b.onclick=async()=>{try{await api(`/api/admin/reviews/${b.dataset.ok}/unflag`,'POST',{});reviews()}catch(e){fail(e)}});
+  $$('[data-rm]').forEach(b=>b.onclick=async()=>{if(!confirm('Supprimer cet avis définitivement ?'))return;try{await api('/api/reviews/'+b.dataset.rm,'DELETE');reviews()}catch(e){fail(e)}});
+}
+
+const views={mod,cats,vip,badges,payments,reviews,rep,bot};
 $$('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;$$('.tab').forEach(x=>x.classList.toggle('on',x===b));views[tab]().catch(fail)});
 $('#lo').onclick=async()=>{await fetch('/auth/logout',{method:'POST'});location.href='/'};
 mod().catch(fail);

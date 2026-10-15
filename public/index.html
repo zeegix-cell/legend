@@ -72,7 +72,7 @@ addEventListener('resize',fitNav);
 const loadRes=async()=>RES=await j('/api/resources').catch(()=>[]);
 const cover=r=>r.images?.[0]?`style="background-image:url('/img/${esc(r.images[0])}')"`:'';
 const card=(r,i=0)=>`<article class="card" data-id="${r.id}" style="animation-delay:${Math.min(i,12)*35}ms"><div class="th" ${cover(r)}>${r.images?.[0]?'':esc((r.categoryName||'?')[0])}<span class="chip">${esc(r.categoryName)}</span>${r.vipOnly?'<span class="lock">★ VIP</span>':''}<button type="button" class="fav ${FAV.has(r.id)?'on':''}" data-fav="${r.id}" aria-label="Favori" title="Ajouter aux favoris">♥</button></div>
- <div class="cb"><h3>${esc(r.title)}</h3><div class="by">par ${esc(r.authorName)}</div><div class="cm"><span>↗ ${r.views}</span><span>↓ ${r.downloads}</span><span>${ago(r.createdAt)}</span></div></div></article>`;
+ <div class="cb"><h3>${esc(r.title)}</h3><div class="by">par ${esc(r.authorName)}</div><div class="cm">${r.ratings?`<span class="rt">★ ${r.rating.toFixed(1).replace('.',',')} <i>(${r.ratings})</i></span>`:''}<span>↗ ${r.views}</span><span>↓ ${r.downloads}</span><span>${ago(r.createdAt)}</span></div></div></article>`;
 const bind=(root=document)=>$$('.card',root).forEach(c=>{
   c.onclick=()=>location.hash='#/r/'+c.dataset.id;
   const fv=$('.fav',c);if(fv)fv.onclick=e=>{e.stopPropagation();toggleFav(c.dataset.id)};
@@ -110,10 +110,12 @@ async function home(){
 }
 
 /* ---------- catalogue ---------- */
+const score=r=>r.ratings?(r.rating*r.ratings+3.5*3)/(r.ratings+3):0;   // moyenne "prudente" : 1 seul avis 5★ ne bat pas 40 avis 4,8★
+const stars=v=>`<span class="stars" style="--p:${Math.max(0,Math.min(5,v))/5*100}%" role="img" aria-label="${v} sur 5">★★★★★</span>`;
 async function list(catId='all',mode='new'){
   await loadRes(); const st={cat:catId,q:'',sort:mode==='top'?'top':'new'}, shut=new Set();
   $('#app').innerHTML=`<div class="wrap"><div style="margin:44px 0 26px"><div class="eb">Catalogue</div><h1 class="t" id="lt">Ressources</h1></div>
-   <div class="layout"><aside class="side" id="sd"></aside><div><div class="bar"><input id="q" placeholder="Filtrer…"><select id="so"><option value="new">Récentes</option><option value="top">Plus téléchargées</option><option value="views">Plus vues</option></select></div><div class="grid" id="g"></div></div></div></div>`;
+   <div class="layout"><aside class="side" id="sd"></aside><div><div class="bar"><input id="q" placeholder="Filtrer…"><select id="so"><option value="new">Récentes</option><option value="top">Plus téléchargées</option><option value="views">Plus vues</option><option value="rated">Mieux notées</option></select></div><div class="grid" id="g"></div></div></div></div>`;
   $('#so').value=st.sort;
   const side=()=>{
     $('#sd').innerHTML=`<div class="sg"><div class="cl ${st.cat==='all'?'on':''}" data-c="all"><span>Toutes</span><b>${RES.length}</b></div></div>`+CAT.groups.map(g=>`<div class="sg ${shut.has(g.id)?'shut':''}"><button class="sgh" data-g="${esc(g.id)}">${esc(g.name)}<i>▾</i></button><div class="sgb">${g.categories.map(c=>`<div class="cl ${c.vipOnly?'v':''} ${st.cat===c.id?'on':''}" data-c="${esc(c.id)}"><span>${c.vipOnly?'★ ':''}${esc(c.name)}</span><b>${RES.filter(r=>r.category===c.id).length}</b></div>`).join('')}</div></div>`).join('');
@@ -123,7 +125,7 @@ async function list(catId='all',mode='new'){
   const draw=()=>{
     side(); const c=allCats().find(x=>x.id===st.cat); $('#lt').textContent=c?c.name:'Ressources';
     const l=RES.filter(r=>(st.cat==='all'||r.category===st.cat)&&(r.title+r.description+r.authorName).toLowerCase().includes(st.q));
-    l.sort({new:(a,b)=>b.createdAt-a.createdAt,top:(a,b)=>b.downloads-a.downloads,views:(a,b)=>b.views-a.views}[st.sort]);
+    l.sort({new:(a,b)=>b.createdAt-a.createdAt,top:(a,b)=>b.downloads-a.downloads,views:(a,b)=>b.views-a.views,rated:(a,b)=>score(b)-score(a)||b.downloads-a.downloads}[st.sort]);
     $('#g').innerHTML=l.map(card).join('')||'<p class="empty">Aucun résultat.</p>';bind($('#g'))};
   $('#q').oninput=e=>{st.q=e.target.value.toLowerCase();draw()};$('#so').onchange=e=>{st.sort=e.target.value;draw()};
   draw();
@@ -142,16 +144,61 @@ async function detail(id){
    <h1 class="t" style="margin-bottom:18px">${esc(r.title)}</h1>
    <div class="hero-img" id="hi">${r.images[0]?`<img src="/img/${esc(r.images[0])}" alt="">`:''}</div>
    ${r.images.length>1?`<div class="gal">${r.images.map((m,i)=>`<img class="${i?'':'on'}" src="/img/${esc(m)}" alt="">`).join('')}</div>`:''}
-   <div class="desc">${esc(r.description)||'<span class="mut">Aucune description.</span>'}</div></div>
+   <div class="desc">${esc(r.description)||'<span class="mut">Aucune description.</span>'}</div>
+   ${pend?'':'<div id="rv"></div>'}</div>
   <aside class="info"><div class="panel"><dl><div><dt>Auteur</dt><dd><a href="#/membre/${esc(r.authorId)}" style="text-decoration:underline">${esc(r.authorName)}</a></dd></div><div><dt>Catégorie</dt><dd>${esc(r.categoryName)}</dd></div>
    ${r.version?`<div><dt>Version</dt><dd>${esc(r.version)}</dd></div>`:''}${r.framework?`<div><dt>Framework</dt><dd>${esc(r.framework)}</dd></div>`:''}
+   <div><dt>Note</dt><dd id="rtd">${r.ratings?`${stars(r.rating)} <span class="mut">${r.rating.toFixed(1).replace('.',',')} (${r.ratings})</span>`:'<span class="mut">Pas encore notée</span>'}</dd></div>
    <div><dt>Fichier</dt><dd>${size(r.fileSize)}</dd></div><div><dt>Vues / Téléch.</dt><dd>${r.views} / ${r.downloads}</dd></div><div><dt>Publié</dt><dd>${ago(r.createdAt)}</dd></div></dl>
    <div style="margin-top:16px;display:grid;gap:8px">${dlBtn}${ME.user&&!pend?`<button class="btn ghost full sm" id="fv" data-fav="${r.id}">${FAV.has(r.id)?'♥ Dans tes favoris':'♡ Ajouter aux favoris'}</button>`:''}${ME.user?'<button class="btn ghost full sm" id="rp">Signaler</button>':''}</div><div id="fl"></div></div></aside></div></div>`;
   $$('.gal img').forEach(g=>g.onclick=()=>{$$('.gal img').forEach(x=>x.classList.remove('on'));g.classList.add('on');$('#hi').innerHTML=`<img src="${g.src}" alt="">`});
   const fv=$('#fv');if(fv)fv.onclick=()=>toggleFav(r.id);
+  if(!pend)reviewsSection(r);
   const rp=$('#rp');if(rp)rp.onclick=async()=>{const why=prompt('Pourquoi signaler cette ressource ? (contenu volé, malveillant…)');if(!why)return;
     try{await j(`/api/resources/${r.id}/report`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:why})});$('#fl').innerHTML='<div class="flash ok" style="margin-top:10px">Merci, signalement transmis.</div>'}catch(e){$('#fl').innerHTML=`<div class="flash err" style="margin-top:10px">${esc(e.message)}</div>`}};
   const hi=$('#hi');hi.onmousemove=e=>{const b=hi.getBoundingClientRect(),x=(e.clientX-b.left)/b.width-.5,y=(e.clientY-b.top)/b.height-.5;hi.style.transform=`perspective(1200px) rotateY(${x*8}deg) rotateX(${-y*8}deg)`};hi.onmouseleave=()=>hi.style.transform='';
+}
+
+/* ---------- avis et notes ---------- */
+async function reviewsSection(r){
+  const box=$('#rv');if(!box)return;
+  let d;try{d=await j(`/api/resources/${r.id}/reviews`)}catch{return}
+  if(!$('#rv')||location.hash!=='#/r/'+r.id)return;
+  const fmt=n=>n.toFixed(1).replace('.',','), mine=d.reviews.find(v=>v.mine), isAuthor=!!ME.user&&ME.user.id===r.authorId;
+  let pick=mine?mine.rating:0;
+  const rtd=$('#rtd');if(rtd)rtd.innerHTML=d.count?`${stars(d.avg)} <span class="mut">${fmt(d.avg)} (${d.count})</span>`:'<span class="mut">Pas encore notée</span>';
+  const rcard=v=>`<article class="rv"><div class="rvt">${v.userAvatar?`<img class="avatar" src="${esc(v.userAvatar)}" alt="">`:`<span class="avatar ph">${esc((v.userName||'?')[0].toUpperCase())}</span>`}<div><a href="#/membre/${esc(v.userId)}"><b>${esc(v.userName)}</b></a><div class="rvm">${stars(v.rating)}<span>${ago(v.createdAt)}${v.edited?' · modifié':''}</span></div></div></div>
+   ${v.text?`<p class="rvx">${esc(v.text)}</p>`:''}${v.reply?`<div class="rvr"><b>Réponse du créateur</b><p class="rvx">${esc(v.reply.text)}</p></div>`:''}
+   <div class="rva">${d.canReply?`<button data-reply="${v.id}">${v.reply?'Modifier la réponse':'Répondre'}</button>`:''}${ME.user&&!v.mine?`<button data-flag="${v.id}">Signaler</button>`:''}${v.mine||d.isAdmin?`<button data-del="${v.id}">Supprimer</button>`:''}${d.isAdmin&&v.flags?`<span class="tag rejected">${v.flags} signalement${v.flags>1?'s':''}</span>`:''}</div></article>`;
+  const form=!ME.user?`<div class="flash" style="margin-bottom:18px">Connecte-toi pour donner ton avis. <a href="/auth/login" style="text-decoration:underline">Connexion avec Discord</a></div>`
+   :d.canReview?`<div class="rvf"><div class="pick" id="pk">${[1,2,3,4,5].map(n=>`<button type="button" data-n="${n}" class="${n<=pick?'on':''}" aria-label="${n} étoile${n>1?'s':''}">★</button>`).join('')}<span class="dim" id="pkt"></span></div>
+     <textarea id="rtx" maxlength="1000" placeholder="Ton avis (facultatif) : est-ce que ça marche bien, c'est facile à installer… ?">${mine?esc(mine.text):''}</textarea>
+     <div class="rvfa"><button class="btn sm" id="rs">${mine?'Modifier mon avis':'Publier mon avis'}</button>${mine?'<button class="btn ghost sm" id="rdl">Supprimer mon avis</button>':''}<span class="dim" id="rmsg"></span></div></div>`
+   :isAuthor?`<div class="flash" style="margin-bottom:18px">C'est ta ressource : tu peux répondre aux avis ci-dessous.</div>`:'';
+  const bars=[5,4,3,2,1].map(s=>`<div><span>${s}★</span><i><u style="width:${d.count?d.dist[s-1]/d.count*100:0}%"></u></i><em>${d.dist[s-1]}</em></div>`).join('');
+  box.innerHTML=`<section class="rvs"><h2>Avis <small>${d.count}</small></h2>
+   ${d.count?`<div class="rvsum"><div class="rvbig"><b>${fmt(d.avg)}</b>${stars(d.avg)}<small>${d.count} avis</small></div><div class="rvbars">${bars}</div></div>`:'<p class="dim" style="margin-bottom:16px">Aucun avis pour le moment. Sois le premier !</p>'}
+   ${form}<div class="rvl">${d.reviews.map(rcard).join('')}</div></section>`;
+  const msg=t=>{const m=$('#rmsg');if(m)m.textContent=t};
+  const labels=['','Mauvais','Moyen','Correct','Bien','Excellent'];
+  const paint=n=>{$$('#pk button').forEach(b=>b.classList.toggle('on',+b.dataset.n<=n));const t=$('#pkt');if(t)t.textContent=labels[n]||''};
+  paint(pick);
+  $$('#pk button').forEach(b=>{b.onclick=()=>{pick=+b.dataset.n;paint(pick)};b.onmouseenter=()=>paint(+b.dataset.n);b.onmouseleave=()=>paint(pick)});
+  const rs=$('#rs');if(rs)rs.onclick=async()=>{
+    if(!pick)return msg('Choisis une note de 1 à 5 étoiles.');
+    rs.disabled=true;
+    try{await j(`/api/resources/${r.id}/reviews`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rating:pick,text:$('#rtx').value})});await reviewsSection(r)}
+    catch(e){rs.disabled=false;msg(e.message)}};
+  const del=async id=>{if(!confirm('Supprimer cet avis ?'))return;try{await j('/api/reviews/'+id,{method:'DELETE'});await reviewsSection(r)}catch(e){alert(e.message)}};
+  const rdl=$('#rdl');if(rdl)rdl.onclick=()=>del(mine.id);
+  $$('[data-del]').forEach(b=>b.onclick=()=>del(b.dataset.del));
+  $$('[data-reply]').forEach(b=>b.onclick=async()=>{
+    const v=d.reviews.find(x=>x.id===b.dataset.reply),t=prompt('Ta réponse publique (laisse vide pour la retirer) :',v&&v.reply?v.reply.text:'');
+    if(t===null)return;
+    try{await j(`/api/reviews/${b.dataset.reply}/reply`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})});await reviewsSection(r)}catch(e){alert(e.message)}});
+  $$('[data-flag]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Signaler cet avis comme abusif ? Un admin le vérifiera.'))return;
+    try{await j(`/api/reviews/${b.dataset.flag}/flag`,{method:'POST'});b.textContent='Signalé ✓';b.disabled=true}catch(e){alert(e.message)}});
 }
 
 /* ---------- publication ---------- */

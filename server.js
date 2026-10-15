@@ -86,7 +86,9 @@ createStore(DATA).then(store => {
   const statsOf = async uid => {
     const mine = (await store.resources()).filter(r => r.authorId === uid && r.status === 'approved'), u = await store.user(uid);
     const first = (u && (u.firstSeen || u.lastLogin)) || (mine.length ? Math.min(...mine.map(r => r.createdAt)) : Date.now());
-    return { resources: mine.length, downloads: mine.reduce((a, r) => a + (r.downloads || 0), 0), days: Math.floor((Date.now() - first) / 864e5), since: first };
+    const rv = await store.allReviews(), mineIds = new Set(mine.map(r => r.id)), got = rv.filter(v => mineIds.has(v.resourceId));
+    return { resources: mine.length, downloads: mine.reduce((a, r) => a + (r.downloads || 0), 0), days: Math.floor((Date.now() - first) / 864e5), since: first,
+      reviewsGot: got.length, ratingAvg: got.length ? got.reduce((a, v) => a + v.rating, 0) / got.length : 0, reviewsWritten: rv.filter(v => v.userId === uid).length };
   };
   const badgeDefs = async () => badgeLib.catalogue(await store.badges());
   const pubBadge = (b, at) => ({ id: b.id, name: b.name, emoji: b.emoji, description: b.description, color: b.color, auto: !!b.auto, at: at || null });
@@ -175,9 +177,11 @@ createStore(DATA).then(store => {
 
   // ---------- Categories ----------
   const catOf = (cats, r) => cats.find(c => c.id === r.category) || cats.find(c => c.id === slug(r.category)) || null;
-  const pub = (r, cats) => {
-    const c = catOf(cats, r);
+  const aggOf = async () => { const m = new Map(); for (const v of await store.allReviews()) { const a = m.get(v.resourceId) || { sum: 0, n: 0 }; a.sum += v.rating; a.n++; m.set(v.resourceId, a); } return m; };
+  const pub = (r, cats, agg) => {
+    const c = catOf(cats, r), a = agg && agg.get(r.id);
     return {
+      rating: a ? Math.round(a.sum / a.n * 10) / 10 : 0, ratings: a ? a.n : 0,
       id: r.id, title: r.title, description: r.description, category: c ? c.id : r.category, categoryName: c ? c.name : r.category,
       vipOnly: !!(c && c.vipOnly), version: r.version, framework: r.framework, images: r.images,
       fileName: r.fileName, fileSize: r.fileSize, authorName: r.authorName, authorId: r.authorId,
@@ -195,22 +199,22 @@ createStore(DATA).then(store => {
 
   // ---------- Ressources ----------
   app.get('/api/resources', ah(async (req, res) => {
-    const [list, cats] = await Promise.all([store.resources(), store.categories()]);
-    res.json(list.filter(r => r.status === 'approved').map(r => pub(r, cats)));
+    const [list, cats, agg] = await Promise.all([store.resources(), store.categories(), aggOf()]);
+    res.json(list.filter(r => r.status === 'approved').map(r => pub(r, cats, agg)));
   }));
 
   app.get('/api/resources/:id', ah(async (req, res) => {
     const r = await store.resource(req.params.id);
     if (!r || (r.status !== 'approved' && !isAdmin(req) && r.authorId !== req.session.user?.id)) return res.status(404).json({ error: 'not found' });
     if (r.status === 'approved') { await store.bump(r.id, 'views'); r.views++; }
-    res.json(pub(r, await store.categories()));
+    res.json(pub(r, await store.categories(), await aggOf()));
   }));
 
   // ---------- Favoris ----------
   app.get('/api/favorites', requireUser, ah(async (req, res) => res.json(await store.favs(req.session.user.id))));
   app.get('/api/favorites/resources', requireUser, ah(async (req, res) => {
-    const [ids, list, cats] = await Promise.all([store.favs(req.session.user.id), store.resources(), store.categories()]), by = new Map(list.filter(r => r.status === 'approved').map(r => [r.id, r]));
-    res.json(ids.map(id => by.get(id)).filter(Boolean).map(r => pub(r, cats)));
+    const [ids, list, cats, agg] = await Promise.all([store.favs(req.session.user.id), store.resources(), store.categories(), aggOf()]), by = new Map(list.filter(r => r.status === 'approved').map(r => [r.id, r]));
+    res.json(ids.map(id => by.get(id)).filter(Boolean).map(r => pub(r, cats, agg)));
   }));
   app.post('/api/favorites/:id', requireUser, ah(async (req, res) => {
     const uid = req.session.user.id, on = req.body?.on !== false, r = await store.resource(req.params.id);
@@ -220,6 +224,55 @@ createStore(DATA).then(store => {
     }
     await store.setFav(uid, String(req.params.id), on); res.json({ on });
   }));
+
+  // ---------- Avis et notes ----------
+  const rhits = new Map();   // 20 avis / heure / membre
+  const pubReview = (v, me, admin) => ({ id: v.id, userId: v.userId, userName: v.userName, userAvatar: v.userAvatar || '', rating: v.rating, text: v.text, createdAt: v.createdAt,
+    edited: v.updatedAt > v.createdAt + 1000, reply: v.reply || null, mine: !!me && v.userId === me, ...(admin ? { flags: (v.flags || []).length } : {}) });
+  const cleanText = (s, max) => String(s || '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').replace(/\n{3,}/g, '\n\n').trim().slice(0, max);
+  const visibleTo = (r, req) => r && (r.status === 'approved' || isAdmin(req) || r.authorId === req.session.user?.id);
+
+  app.get('/api/resources/:id/reviews', ah(async (req, res) => {
+    const r = await store.resource(req.params.id); if (!visibleTo(r, req)) return res.status(404).json({ error: 'not found' });
+    const me = req.session.user?.id, list = await store.reviews(r.id), dist = [0, 0, 0, 0, 0];
+    list.forEach(v => dist[v.rating - 1]++);
+    res.json({ reviews: list.map(v => pubReview(v, me, isAdmin(req))), count: list.length, avg: list.length ? Math.round(list.reduce((a, v) => a + v.rating, 0) / list.length * 10) / 10 : 0, dist,
+      canReview: !!me && r.status === 'approved' && r.authorId !== me, canReply: !!me && (r.authorId === me || isAdmin(req)), isAdmin: isAdmin(req) });
+  }));
+  app.post('/api/resources/:id/reviews', requireUser, ah(async (req, res) => {
+    const u = req.session.user, r = await store.resource(req.params.id), rating = Number(req.body?.rating), now = Date.now();
+    if (!r || r.status !== 'approved') return res.status(404).json({ error: 'Ressource introuvable.' });
+    if (r.authorId === u.id) return res.status(403).json({ error: 'Tu ne peux pas noter ta propre ressource.' });
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: 'Choisis une note de 1 à 5 étoiles.' });
+    const recent = (rhits.get(u.id) || []).filter(t => now - t < 36e5); if (recent.length >= 20) return res.status(429).json({ error: 'Trop d\'avis en peu de temps, réessaie plus tard.' });
+    rhits.set(u.id, [...recent, now]);
+    await store.upsertReview({ id: crypto.randomUUID(), resourceId: r.id, userId: u.id, userName: u.name, userAvatar: u.avatar || '', rating, text: cleanText(req.body?.text, 1000), createdAt: now, updatedAt: now, reply: null, flags: [] });
+    evalSoon(r.authorId); evalSoon(u.id); res.json({ ok: true });
+  }));
+  app.delete('/api/reviews/:id', requireUser, ah(async (req, res) => {
+    const v = await store.review(req.params.id); if (!v) return res.status(404).json({ error: 'Avis introuvable.' });
+    if (v.userId !== req.session.user.id && !isAdmin(req)) return res.status(403).json({ error: 'Interdit.' });
+    await store.delReview(v.id); res.json({ ok: true });
+  }));
+  app.post('/api/reviews/:id/reply', requireUser, ah(async (req, res) => {
+    const v = await store.review(req.params.id), r = v && await store.resource(v.resourceId);
+    if (!v || !r) return res.status(404).json({ error: 'Avis introuvable.' });
+    if (r.authorId !== req.session.user.id && !isAdmin(req)) return res.status(403).json({ error: 'Seul le créateur peut répondre.' });
+    const text = cleanText(req.body?.text, 500);
+    await store.patchReview(v.id, { reply: text ? { text, at: Date.now(), by: req.session.user.name } : null }); res.json({ ok: true });
+  }));
+  app.post('/api/reviews/:id/flag', requireUser, ah(async (req, res) => {
+    const v = await store.review(req.params.id), uid = req.session.user.id; if (!v) return res.status(404).json({ error: 'Avis introuvable.' });
+    if (v.userId === uid) return res.status(400).json({ error: 'C\'est ton propre avis.' });
+    const flags = [...new Set([...(v.flags || []), uid])].slice(0, 50); await store.patchReview(v.id, { flags }); res.json({ ok: true });
+  }));
+  app.get('/api/admin/reviews', requireAdmin, ah(async (req, res) => {
+    const [all, resources] = await Promise.all([store.allReviews(), store.resources()]), title = new Map(resources.map(r => [r.id, r.title]));
+    const row = v => ({ ...pubReview(v, null, true), resourceId: v.resourceId, resourceTitle: title.get(v.resourceId) || '(supprimée)' });
+    const sorted = all.slice().sort((a, b) => b.createdAt - a.createdAt);
+    res.json({ flagged: sorted.filter(v => (v.flags || []).length).map(row), recent: sorted.filter(v => !(v.flags || []).length).slice(0, 40).map(row) });
+  }));
+  app.post('/api/admin/reviews/:id/unflag', requireAdmin, ah(async (req, res) => { res.json({ ok: !!(await store.patchReview(req.params.id, { flags: [] })) }); }));
 
   // ---------- Parrainage : page du membre + reglages admin ----------
   app.get('/api/referral', requireUser, ah(async (req, res) => {

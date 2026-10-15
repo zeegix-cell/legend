@@ -65,6 +65,17 @@ function jsonStore(dir) {
     async removeBadge(id) { wr('badges', rd('badges').filter(b => b.id !== id)); wr('user_badges', rd('user_badges').filter(x => x.badgeId !== id)); },
     async userBadges(uid) { return rd('user_badges').filter(x => x.userId === uid); },
     async allUserBadges() { return rd('user_badges'); },
+    // avis et notes (un avis par membre et par ressource)
+    async reviews(rid) { return rd('reviews').filter(x => x.resourceId === rid).sort((a, b) => b.createdAt - a.createdAt); },
+    async allReviews() { return rd('reviews'); },
+    async review(id) { return rd('reviews').find(x => x.id === id) || null; },
+    async upsertReview(v) {
+      const l = rd('reviews'), i = l.findIndex(x => x.resourceId === v.resourceId && x.userId === v.userId);
+      if (i >= 0) { l[i] = { ...l[i], rating: v.rating, text: v.text, updatedAt: v.updatedAt, userName: v.userName, userAvatar: v.userAvatar }; wr('reviews', l); return l[i]; }
+      l.push(v); wr('reviews', l); return v;
+    },
+    async patchReview(id, p) { const l = rd('reviews'), x = l.find(y => y.id === id); if (!x) return null; Object.assign(x, p); wr('reviews', l); return x; },
+    async delReview(id) { const l = rd('reviews'), n = l.filter(x => x.id !== id); wr('reviews', n); return n.length < l.length; },
     // favoris
     async favs(uid) { return (rd('favorites', {})[uid] || []).slice().reverse(); },
     async setFav(uid, rid, on) { const m = rd('favorites', {}), l = new Set(m[uid] || []); on ? l.add(rid) : l.delete(rid); m[uid] = [...l]; wr('favorites', m); },
@@ -94,6 +105,7 @@ function jsonStore(dir) {
 function mysqlStore(cfg) {
   const mysql = require('mysql2/promise');
   const pool = mysql.createPool({ ...cfg, waitForConnections: true, connectionLimit: 10, charset: 'utf8mb4' });
+  const toV = v => ({ ...v, rating: Number(v.rating), createdAt: Number(v.createdAt), updatedAt: Number(v.updatedAt), reply: v.reply ? JSON.parse(v.reply) : null, flags: JSON.parse(v.flags || '[]') });
   const toR = r => ({ ...r, images: JSON.parse(r.images || '[]'), fileSize: Number(r.fileSize), createdAt: Number(r.createdAt) });
   const COLS = ['id', 'title', 'description', 'category', 'version', 'framework', 'images', 'file', 'fileName', 'fileSize',
     'authorId', 'authorName', 'authorAvatar', 'status', 'views', 'downloads', 'createdAt'];
@@ -123,6 +135,7 @@ function mysqlStore(cfg) {
       await q(`CREATE TABLE IF NOT EXISTS badges (id VARCHAR(40) PRIMARY KEY, name VARCHAR(40) NOT NULL, emoji VARCHAR(16), description VARCHAR(200), color VARCHAR(7), position INT NOT NULL DEFAULT 0) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS user_badges (userId VARCHAR(32) NOT NULL, badgeId VARCHAR(40) NOT NULL, at BIGINT, grantedBy VARCHAR(100), auto TINYINT(1) NOT NULL DEFAULT 0, PRIMARY KEY (userId, badgeId), INDEX (badgeId)) ${T}`);
       await q('ALTER TABLE users ADD COLUMN firstSeen BIGINT NULL').catch(() => {});   // deja presente apres le 1er demarrage
+      await q(`CREATE TABLE IF NOT EXISTS reviews (id VARCHAR(36) PRIMARY KEY, resourceId VARCHAR(36) NOT NULL, userId VARCHAR(32) NOT NULL, userName VARCHAR(100), userAvatar VARCHAR(255), rating TINYINT NOT NULL, text TEXT, createdAt BIGINT NOT NULL, updatedAt BIGINT NOT NULL, reply TEXT NULL, flags TEXT NULL, UNIQUE KEY one_per_user (resourceId, userId), INDEX (userId)) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS favorites (userId VARCHAR(32) NOT NULL, resourceId VARCHAR(36) NOT NULL, at BIGINT NOT NULL, PRIMARY KEY (userId, resourceId)) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS referrals (refereeId VARCHAR(32) PRIMARY KEY, referrerId VARCHAR(32) NOT NULL, refereeName VARCHAR(100), createdAt BIGINT NOT NULL, referrerDays INT NOT NULL DEFAULT 0, refereeDays INT NOT NULL DEFAULT 0, INDEX (referrerId)) ${T}`);
       await q(`CREATE TABLE IF NOT EXISTS orders (id VARCHAR(36) PRIMARY KEY, userId VARCHAR(32) NOT NULL, userName VARCHAR(100), planId VARCHAR(20), label VARCHAR(40), days INT NULL, amount DECIMAL(10,2) NOT NULL, currency VARCHAR(8), provider VARCHAR(20), providerRef VARCHAR(80), status VARCHAR(12) NOT NULL, createdAt BIGINT NOT NULL, paidAt BIGINT NULL, INDEX (userId), INDEX (createdAt)) ${T}`);
@@ -177,6 +190,23 @@ function mysqlStore(cfg) {
     async removeBadge(id) { await pool.query('DELETE FROM user_badges WHERE badgeId=?', [id]); await pool.query('DELETE FROM badges WHERE id=?', [id]); },
     async userBadges(uid) { const [r] = await pool.query('SELECT * FROM user_badges WHERE userId=?', [uid]); return r.map(x => ({ ...x, at: num(x.at), auto: !!x.auto })); },
     async allUserBadges() { const [r] = await pool.query('SELECT * FROM user_badges'); return r.map(x => ({ ...x, at: num(x.at), auto: !!x.auto })); },
+    async reviews(rid) { const [r] = await pool.query('SELECT * FROM reviews WHERE resourceId=? ORDER BY createdAt DESC', [rid]); return r.map(toV); },
+    async allReviews() { const [r] = await pool.query('SELECT * FROM reviews'); return r.map(toV); },
+    async review(id) { const [r] = await pool.query('SELECT * FROM reviews WHERE id=?', [id]); return r[0] ? toV(r[0]) : null; },
+    async upsertReview(v) {
+      await pool.query('INSERT INTO reviews (id,resourceId,userId,userName,userAvatar,rating,text,createdAt,updatedAt,reply,flags) VALUES (?,?,?,?,?,?,?,?,?,NULL,?) ON DUPLICATE KEY UPDATE rating=VALUES(rating), text=VALUES(text), updatedAt=VALUES(updatedAt), userName=VALUES(userName), userAvatar=VALUES(userAvatar)',
+        [v.id, v.resourceId, v.userId, v.userName, v.userAvatar || '', v.rating, v.text, v.createdAt, v.updatedAt, '[]']);
+      const [r] = await pool.query('SELECT * FROM reviews WHERE resourceId=? AND userId=?', [v.resourceId, v.userId]); return toV(r[0]);
+    },
+    async patchReview(id, p) {
+      const set = [], val = [];
+      if ('reply' in p) { set.push('reply=?'); val.push(p.reply ? JSON.stringify(p.reply) : null); }
+      if ('flags' in p) { set.push('flags=?'); val.push(JSON.stringify(p.flags)); }
+      if (!set.length) return null;
+      await pool.query(`UPDATE reviews SET ${set.join(',')} WHERE id=?`, [...val, id]);
+      const [r] = await pool.query('SELECT * FROM reviews WHERE id=?', [id]); return r[0] ? toV(r[0]) : null;
+    },
+    async delReview(id) { const [r] = await pool.query('DELETE FROM reviews WHERE id=?', [id]); return r.affectedRows > 0; },
     async favs(uid) { const [r] = await pool.query('SELECT resourceId FROM favorites WHERE userId=? ORDER BY at DESC', [uid]); return r.map(x => x.resourceId); },
     async setFav(uid, rid, on) { if (on) await pool.query('INSERT IGNORE INTO favorites (userId,resourceId,at) VALUES (?,?,?)', [uid, rid, Date.now()]); else await pool.query('DELETE FROM favorites WHERE userId=? AND resourceId=?', [uid, rid]); },
     async addReferral(x) { const [r] = await pool.query('INSERT IGNORE INTO referrals (refereeId,referrerId,refereeName,createdAt,referrerDays,refereeDays) VALUES (?,?,?,?,?,?)', [x.refereeId, x.referrerId, x.refereeName, x.createdAt, x.referrerDays, x.refereeDays]); return r.affectedRows > 0; },

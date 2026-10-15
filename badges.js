@@ -6,6 +6,8 @@ const AUTO = [
   { id: 'star', emoji: '🔥', name: 'Star', description: '1 000 téléchargements sur tes ressources', color: '#f97316', test: s => s.downloads >= 1000 },
   { id: 'prolific', emoji: '🏭', name: 'Prolifique', description: '25 ressources validées', color: '#a78bfa', test: s => s.resources >= 25 },
   { id: 'popular', emoji: '📥', name: 'Populaire', description: '100 téléchargements sur tes ressources', color: '#f59e0b', test: s => s.downloads >= 100 },
+  { id: 'loved', emoji: '⭐', name: 'Apprécié', description: 'Note moyenne d\'au moins 4,5/5 sur 10 avis reçus', color: '#facc15', test: s => s.reviewsGot >= 10 && s.ratingAvg >= 4.5 },
+  { id: 'critic', emoji: '📝', name: 'Critique', description: '10 avis écrits sur des ressources', color: '#60a5fa', test: s => s.reviewsWritten >= 10 },
   { id: 'contrib', emoji: '📦', name: 'Contributeur', description: '5 ressources validées', color: '#38bdf8', test: s => s.resources >= 5 },
   { id: 'veteran', emoji: '🗓️', name: 'Ancien', description: 'Membre depuis plus de 90 jours', color: '#94a3b8', test: s => s.days >= 90 },
   { id: 'first', emoji: '🌱', name: 'Premier pas', description: 'Ta première ressource validée', color: '#4ade80', test: s => s.resources >= 1 }

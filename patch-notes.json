@@ -1,5 +1,21 @@
 [
   {
+    "version": "1.12.0",
+    "date": "2026-10-15",
+    "title": "Avis et notes",
+    "new": [
+      "**Notes et avis** sous chaque ressource : de 1 à 5 étoiles, avec un commentaire facultatif",
+      "La **note moyenne** s'affiche sur les cartes et la page de la ressource, avec le détail par nombre d'étoiles",
+      "Les créateurs peuvent **répondre** aux avis, et tu peux **signaler** un avis abusif",
+      "Nouveau tri **Mieux notées** dans le catalogue",
+      "Deux nouveaux badges : **⭐ Apprécié** (note moyenne de 4,5/5 sur 10 avis) et **📝 Critique** (10 avis écrits)"
+    ],
+    "improved": [
+      "Un seul avis par ressource : tu peux le modifier ou le supprimer à tout moment",
+      "Modération des avis dans le panel admin"
+    ]
+  },
+  {
     "version": "1.11.0",
     "date": "2026-10-14",
     "title": "Favoris et parrainage",
